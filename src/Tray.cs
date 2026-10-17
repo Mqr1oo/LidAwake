@@ -75,7 +75,10 @@ namespace LidAwake
 
             if (turnOn) TurnOnManually();
             else if (holder != null) { Add(holder, pid); Activate(); }
+            else if (ShowWelcome) tray.ShowBalloonTip(6000, "LidAwake", Strings.Welcome, ToolTipIcon.None);
         }
+
+        public static bool ShowWelcome;   // first start right after installing
 
         // ---- on / off ----------------------------------------------------------------------
 

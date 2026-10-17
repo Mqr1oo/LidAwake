@@ -14,7 +14,7 @@ New-Item -ItemType Directory -Force $bin | Out-Null
 & $csc /nologo /codepage:65001 /target:winexe /optimize+ /platform:anycpu `
     "/out:$bin\LidAwake.exe" `
     "/win32icon:$ico" "/win32manifest:$root\src\app.manifest" "/resource:$ico,LidAwake.ico" `
-    /r:System.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Core.dll `
+    /r:System.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Core.dll /r:System.Web.Extensions.dll `
     "$root\src\*.cs"
 if ($LASTEXITCODE -ne 0) { throw "Build failed ($LASTEXITCODE)" }
 Write-Host "Built $bin\LidAwake.exe"

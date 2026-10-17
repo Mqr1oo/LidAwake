@@ -32,15 +32,17 @@ LidAwake is ever killed, the next start puts them back first. You can also run `
 
 ## Install
 
-Download `LidAwake.exe` from [Releases](https://github.com/Mqr1oo/LidAwake/releases/latest) (or build it, see
-below), then run:
+Download `LidAwake.exe` from [Releases](https://github.com/Mqr1oo/LidAwake/releases/latest) and **double-click
+it**. That's all:
 
-```
-LidAwake.exe install
-```
+- it installs itself to `%LOCALAPPDATA%\Programs\LidAwake\`, adds **LidAwake** to the Start menu, sits in the
+  tray and starts with Windows;
+- if Claude Code is installed, it asks once: *Connect LidAwake to Claude Code?* Click **Yes** and it adds the
+  hooks below to `%USERPROFILE%\.claude\settings.json`, keeping everything else and saving a backup first. It
+  also adds a short note to `%USERPROFILE%\.claude\CLAUDE.md` so Claude knows the tool exists.
 
-This copies it to `%LOCALAPPDATA%\Programs\LidAwake\` and adds **LidAwake** to the Start menu. You can pin it
-to the taskbar or Start from there.
+Downloading a newer version and double-clicking it updates in place. `LidAwake connect` / `LidAwake disconnect`
+add or remove the Claude Code part later, and `LidAwake uninstall` removes everything.
 
 ## Use it by hand
 
@@ -49,9 +51,9 @@ and the work keeps going. Click the cup again when you are done.
 
 ## Let Claude Code turn it on and off
 
-Add these hooks to `%USERPROFILE%\.claude\settings.json`, merged with what is already there.
-`LidAwake hooks` prints this block with your own path. Claude Code also reads this file for sessions in the
-Claude desktop app's Code tab.
+The installer adds these for you (see above). To add them by hand instead, merge this into
+`%USERPROFILE%\.claude\settings.json`; `LidAwake hooks` prints it with your own path. Claude Code also reads
+this file for sessions in the Claude desktop app's Code tab.
 
 ```json
 {

@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Keeps a Windows laptop working with the lid closed while a job runs")]
 [assembly: AssemblyProduct("LidAwake")]
 [assembly: AssemblyCopyright("MIT License")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 
 namespace LidAwake
 {
@@ -33,8 +33,9 @@ namespace LidAwake
             {
                 switch (cmd)
                 {
-                    case "": return Manual();
-                    case "tray": return Native.FindWindow(null, App.IpcWindowTitle) != IntPtr.Zero ? 0 : RunInstance(true, false, null, 0);
+                    case "": return Installer.IsInstalledCopy ? Manual() : Installer.Install(true);
+                    case "on": return Manual();
+                    case "tray": return Native.FindWindow(null, App.IpcWindowTitle) != IntPtr.Zero ? 0 : RunInstance(true, false, null, 0, arg1 == "--welcome");
                     case "quit": Ipc.Send("quit", "", 0); return 0;
                     case "preview": return Preview(arg1);
                     case "run": return RunInstance(false, false, arg1 ?? "job", args.Length > 2 ? ParseInt(args[2]) : 0);
@@ -44,8 +45,10 @@ namespace LidAwake
                     case "off": Ipc.Send("off", "", 0); return 0;
                     case "status": return Status();
                     case "restore": return Restore();
-                    case "install": return Installer.Install();
+                    case "install": return Installer.Install(false);
                     case "uninstall": return Installer.Uninstall();
+                    case "connect": Cli.Out(ClaudeSetup.Connect(Installer.InstalledExe) ? "Connected to Claude Code." : "Could not edit settings.json, see the log."); return 0;
+                    case "disconnect": ClaudeSetup.Disconnect(); Cli.Out("Disconnected from Claude Code."); return 0;
                     case "hooks": Cli.Out(Installer.HooksJson(Installer.InstalledExe)); return 0;
                     default: Cli.Out(Strings.Usage); return cmd == "help" || cmd == "h" || cmd == "?" ? 0 : 2;
                 }
@@ -108,7 +111,7 @@ namespace LidAwake
 
         // resident: keep the tray icon after turning off (Start menu / Windows startup).
         // Otherwise (started by a hook) exit once the jobs are done.
-        static int RunInstance(bool resident, bool manual, string holder, int pid)
+        static int RunInstance(bool resident, bool manual, string holder, int pid, bool welcome = false)
         {
             bool created;
             using (var mutex = new Mutex(true, MutexName, out created))
@@ -140,6 +143,7 @@ namespace LidAwake
 
                 try
                 {
+                    TrayApp.ShowWelcome = welcome;
                     app = new TrayApp(resident, manual, holder, pid);
                 }
                 catch (Exception ex)
@@ -464,93 +468,6 @@ namespace LidAwake
         }
     }
 
-    static class Installer
-    {
-        public static string InstallDir
-        {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "LidAwake"); }
-        }
-
-        public static string InstalledExe { get { return Path.Combine(InstallDir, "LidAwake.exe"); } }
-
-        static string ShortcutPath
-        {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "LidAwake.lnk"); }
-        }
-
-        public static int Install()
-        {
-            Ipc.Send("quit", "", 0);
-            for (int i = 0; i < 50 && Native.FindWindow(null, App.IpcWindowTitle) != IntPtr.Zero; i++) Thread.Sleep(100);
-            Directory.CreateDirectory(InstallDir);
-            if (!string.Equals(Path.GetFullPath(App.ExePath), Path.GetFullPath(InstalledExe), StringComparison.OrdinalIgnoreCase))
-                File.Copy(App.ExePath, InstalledExe, true);
-
-            // Start menu shortcut through the shell's own COM object
-            Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-            object shell = Activator.CreateInstance(shellType);
-            try
-            {
-                object lnk = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { ShortcutPath });
-                Type t = lnk.GetType();
-                t.InvokeMember("TargetPath", BindingFlags.SetProperty, null, lnk, new object[] { InstalledExe });
-                t.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, lnk, new object[] { InstallDir });
-                t.InvokeMember("Description", BindingFlags.SetProperty, null, lnk, new object[] { "Keep the laptop working with the lid closed" });
-                t.InvokeMember("IconLocation", BindingFlags.SetProperty, null, lnk, new object[] { InstalledExe + ",0" });
-                t.InvokeMember("Save", BindingFlags.InvokeMethod, null, lnk, null);
-                Marshal.FinalReleaseComObject(lnk);
-            }
-            finally { Marshal.FinalReleaseComObject(shell); }
-
-            // stays in the tray (off) from now on and after every sign-in
-            using (var k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
-                k.SetValue("LidAwake", "\"" + InstalledExe + "\" tray");
-            var psi = new ProcessStartInfo(InstalledExe, "tray");
-            psi.UseShellExecute = true;
-            psi.WorkingDirectory = InstallDir;
-            Process.Start(psi);
-
-            Cli.Out("Installed: " + InstalledExe + Environment.NewLine
-                + "Start menu: LidAwake. It now sits in the tray and starts with Windows (untick it in its menu)."
-                + Environment.NewLine + Environment.NewLine
-                + "To let Claude Code switch it on/off by itself, merge this into %USERPROFILE%\\.claude\\settings.json:"
-                + Environment.NewLine + HooksJson(InstalledExe));
-            return 0;
-        }
-
-        public static int Uninstall()
-        {
-            Ipc.Send("quit", "", 0);
-            for (int i = 0; i < 50 && Native.FindWindow(null, App.IpcWindowTitle) != IntPtr.Zero; i++) Thread.Sleep(100);
-            Snapshot.RecoverLeftovers();
-            using (var k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
-                if (k.GetValue("LidAwake") != null) k.DeleteValue("LidAwake");
-            try { File.Delete(ShortcutPath); } catch { }
-            bool runningFromInstall = string.Equals(Path.GetFullPath(App.ExePath), Path.GetFullPath(InstalledExe), StringComparison.OrdinalIgnoreCase);
-            if (!runningFromInstall)
-            {
-                try { Directory.Delete(InstallDir, true); } catch { }
-            }
-            Cli.Out("Removed the Start menu shortcut." + (runningFromInstall
-                ? " Delete " + InstallDir + " yourself (this exe is running from it)." : " Removed " + InstallDir + ".")
-                + Environment.NewLine + "Remove the LidAwake hooks from %USERPROFILE%\\.claude\\settings.json if you added them.");
-            return 0;
-        }
-
-        public static string HooksJson(string exe)
-        {
-            string path = exe.Replace("\\", "\\\\");
-            string entry = "[ { \"hooks\": [ { \"type\": \"command\", \"command\": \"" + path
-                + "\", \"args\": [\"hook\"], \"timeout\": 10 } ] } ]";
-            return "{\n  \"hooks\": {\n"
-                + "    \"UserPromptSubmit\": " + entry + ",\n"
-                + "    \"Stop\": " + entry + ",\n"
-                + "    \"StopFailure\": " + entry + ",\n"
-                + "    \"SessionEnd\": " + entry + "\n"
-                + "  }\n}";
-        }
-    }
-
     // UI text, Romanian when Windows is in Romanian, English otherwise.
     static class Strings
     {
@@ -574,6 +491,12 @@ namespace LidAwake
         public static readonly string StatusEnding = Ro ? "Gata - se oprește în câteva secunde" : "Done - turning off in a moment";
         public static readonly string StatusOff = Ro ? "Setările tale de energie sunt neatinse" : "Your power settings are untouched";
         public static readonly string BalloonOn = Ro ? "Poți închide capacul: ecranul se stinge, treaba continuă." : "You can close the lid: the screen turns off, the work keeps going.";
+        public static readonly string AskConnect = Ro
+            ? "Conectez LidAwake la Claude Code?\n\nAșa pornește singur cât lucrează Claude și se oprește când Claude a terminat tot (inclusiv taskurile din fundal).\n\nSe adaugă 4 hook-uri în .claude\\settings.json (se face o copie de siguranță) și o scurtă notă în .claude\\CLAUDE.md, ca să știe Claude de el."
+            : "Connect LidAwake to Claude Code?\n\nIt will turn on by itself while Claude works and off when Claude is done, including background tasks.\n\nThis adds 4 hooks to .claude\\settings.json (a backup is kept) and a short note to .claude\\CLAUDE.md so Claude knows about it.";
+        public static readonly string Welcome = Ro
+            ? "LidAwake e în tray (cana de cafea). Click pe ea ca să-l pornești; Claude îl pornește singur."
+            : "LidAwake is in the tray (the coffee cup). Click it to turn it on; Claude turns it on by itself.";
         public static readonly string LidBlocked = Ro ? "Windows nu a permis schimbarea acțiunii capacului." : "Windows did not allow changing the lid action.";
         public static readonly string NoLid = Ro ? "Acest PC nu are setare pentru capac." : "This PC has no lid setting.";
 
@@ -584,7 +507,8 @@ namespace LidAwake
   LidAwake start [id] keep awake for a job          LidAwake stop [id]  that job is done
   LidAwake off        turn off now                     LidAwake status     show state
   LidAwake restore    put power settings back       LidAwake hook       for Claude Code hooks
-  LidAwake install    Start menu shortcut + hooks   LidAwake uninstall
+  LidAwake install    install (also on double-click) LidAwake uninstall
+  LidAwake connect    add the Claude Code hooks     LidAwake disconnect remove them
   LidAwake hooks      print the Claude Code hooks JSON
   LidAwake quit       turn off and leave the tray";
     }
