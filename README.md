@@ -83,7 +83,9 @@ LidAwake              turn on until you press Stop in the tray
 LidAwake start [id]   keep awake for a job          LidAwake stop [id]   that job is done
 LidAwake off          stop now                      LidAwake status      show state
 LidAwake restore      put power settings back       LidAwake hook        used by the hooks above
-LidAwake install      Start menu shortcut           LidAwake uninstall
+LidAwake install      install (= double-click)      LidAwake uninstall
+LidAwake connect      add the Claude Code hooks     LidAwake disconnect  remove them
+LidAwake on           turn on                       LidAwake quit        leave the tray
 LidAwake hooks        print the hooks JSON
 ```
 
