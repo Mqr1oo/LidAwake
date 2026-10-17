@@ -42,7 +42,14 @@ it**. That's all:
   also adds a short note to `%USERPROFILE%\.claude\CLAUDE.md` so Claude knows the tool exists.
 
 Downloading a newer version and double-clicking it updates in place. `LidAwake connect` / `LidAwake disconnect`
-add or remove the Claude Code part later, and `LidAwake uninstall` removes everything.
+add or remove the Claude Code part later.
+
+## Uninstall
+
+**Settings → Apps → Installed apps → LidAwake → Uninstall**, like any other app (or run `LidAwake uninstall`).
+This puts your power settings back and removes the hooks and the note from Claude Code (the rest of
+those files is kept). It also deletes the program and its log, the Start menu entry and the
+start-with-Windows entry.
 
 ## Use it by hand
 

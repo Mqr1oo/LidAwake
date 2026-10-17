@@ -42,7 +42,9 @@ namespace LidAwake
             for (int i = 0; i < 50 && Native.FindWindow(null, App.IpcWindowTitle) != IntPtr.Zero; i++) Thread.Sleep(100);
         }
 
-        public static int Install(bool gui)
+        const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\LidAwake";
+
+        public static int Install(bool gui, bool connect = false)
         {
             QuitRunning();   // an older copy may be running from the place we copy to
             Directory.CreateDirectory(InstallDir);
@@ -50,13 +52,14 @@ namespace LidAwake
             CreateShortcut();
             using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
                 k.SetValue("LidAwake", "\"" + InstalledExe + "\" tray");
+            RegisterInstalledApp();
 
             // Claude Code: ask once; on later installs (updates) just refresh what is there
             string claude = "not found";
             if (ClaudeSetup.ClaudeInstalled)
             {
                 bool connected = ClaudeSetup.HooksPresent();
-                if (connected || MessageBox.Show(Strings.AskConnect, "LidAwake", MessageBoxButtons.YesNo,
+                if (connected || connect || MessageBox.Show(Strings.AskConnect, "LidAwake", MessageBoxButtons.YesNo,
                         MessageBoxIcon.Question) == DialogResult.Yes)
                 {
                     claude = ClaudeSetup.Connect(InstalledExe) ? "connected" : "could not edit settings.json (see the log)";
@@ -95,20 +98,58 @@ namespace LidAwake
             finally { Marshal.FinalReleaseComObject(shell); }
         }
 
-        public static int Uninstall()
+        // Settings > Apps > Installed apps entry (per user, no admin), with an Uninstall button.
+        static void RegisterInstalledApp()
+        {
+            using (var k = Registry.CurrentUser.CreateSubKey(UninstallKey))
+            {
+                string exe = "\"" + InstalledExe + "\"";
+                k.SetValue("DisplayName", "LidAwake");
+                k.SetValue("DisplayVersion", Assembly.GetExecutingAssembly().GetName().Version.ToString(3));
+                k.SetValue("Publisher", "Mqr1oo");
+                k.SetValue("DisplayIcon", InstalledExe + ",0");
+                k.SetValue("InstallLocation", InstallDir);
+                k.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
+                k.SetValue("URLInfoAbout", "https://github.com/Mqr1oo/LidAwake");
+                k.SetValue("UninstallString", exe + " uninstall --gui");
+                k.SetValue("QuietUninstallString", exe + " uninstall");
+                k.SetValue("EstimatedSize", (int)(new FileInfo(InstalledExe).Length / 1024), RegistryValueKind.DWord);
+                k.SetValue("NoModify", 1, RegistryValueKind.DWord);
+                k.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+            }
+        }
+
+        public static int Uninstall(bool gui)
         {
             QuitRunning();
-            Snapshot.RecoverLeftovers();
+            Snapshot.RecoverLeftovers();   // settings back first, before the restore file goes away
             using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
                 if (k.GetValue("LidAwake") != null) k.DeleteValue("LidAwake");
+            try { Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false); } catch { }
             try { File.Delete(ShortcutPath); } catch { }
             ClaudeSetup.Disconnect();
-            if (!IsInstalledCopy)
+
+            // Remove the program and its log. A running exe can't delete itself, so a hidden cmd does it after
+            // we exit, retrying a few times in case a scanner briefly holds a file.
+            if (IsInstalledCopy)
+            {
+                string a = "\"" + InstallDir + "\"", b = "\"" + App.DataDir + "\"";
+                string del = "rmdir /s /q " + a + " 2>nul & rmdir /s /q " + b + " 2>nul & if not exist " + a
+                    + " if not exist " + b + " exit";   // stop once gone, so a quick reinstall survives
+                var psi = new ProcessStartInfo("cmd.exe", "/c for /l %i in (1,1,6) do (ping -n 3 127.0.0.1 >nul & " + del + ")");
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.WorkingDirectory = Path.GetTempPath();
+                Process.Start(psi);
+            }
+            else
             {
                 try { Directory.Delete(InstallDir, true); } catch { }
+                try { Directory.Delete(App.DataDir, true); } catch { }
             }
-            Cli.Out("LidAwake removed: tray, Start menu, start with Windows and the Claude Code hooks."
-                + (IsInstalledCopy ? " Delete " + InstallDir + " yourself (this exe is running from it)." : ""));
+
+            if (gui) MessageBox.Show(Strings.Removed, "LidAwake", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            else Cli.Out("LidAwake removed: program, tray, Start menu, start with Windows, Claude Code hooks and note. Power settings are as before.");
             return 0;
         }
 

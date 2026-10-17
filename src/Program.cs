@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Keeps a Windows laptop working with the lid closed while a job runs")]
 [assembly: AssemblyProduct("LidAwake")]
 [assembly: AssemblyCopyright("MIT License")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace LidAwake
 {
@@ -45,8 +45,8 @@ namespace LidAwake
                     case "off": Ipc.Send("off", "", 0); return 0;
                     case "status": return Status();
                     case "restore": return Restore();
-                    case "install": return Installer.Install(false);
-                    case "uninstall": return Installer.Uninstall();
+                    case "install": return Installer.Install(false, arg1 == "--connect");
+                    case "uninstall": return Installer.Uninstall(arg1 == "--gui");
                     case "connect": Cli.Out(ClaudeSetup.Connect(Installer.InstalledExe) ? "Connected to Claude Code." : "Could not edit settings.json, see the log."); return 0;
                     case "disconnect": ClaudeSetup.Disconnect(); Cli.Out("Disconnected from Claude Code."); return 0;
                     case "hooks": Cli.Out(Installer.HooksJson(Installer.InstalledExe)); return 0;
@@ -497,6 +497,9 @@ namespace LidAwake
         public static readonly string Welcome = Ro
             ? "LidAwake e în tray (cana de cafea). Click pe ea ca să-l pornești; Claude îl pornește singur."
             : "LidAwake is in the tray (the coffee cup). Click it to turn it on; Claude turns it on by itself.";
+        public static readonly string Removed = Ro
+            ? "LidAwake a fost dezinstalat.\n\nSetările tale de energie sunt exact cum erau, iar hook-urile și nota din Claude Code au fost scoase."
+            : "LidAwake has been uninstalled.\n\nYour power settings are as they were, and the Claude Code hooks and note were removed.";
         public static readonly string LidBlocked = Ro ? "Windows nu a permis schimbarea acțiunii capacului." : "Windows did not allow changing the lid action.";
         public static readonly string NoLid = Ro ? "Acest PC nu are setare pentru capac." : "This PC has no lid setting.";
 
