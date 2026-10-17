@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Keeps a Windows laptop working with the lid closed while a job runs")]
 [assembly: AssemblyProduct("LidAwake")]
 [assembly: AssemblyCopyright("MIT License")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace LidAwake
 {
@@ -38,6 +38,7 @@ namespace LidAwake
                     case "tray": return Native.FindWindow(null, App.IpcWindowTitle) != IntPtr.Zero ? 0 : RunInstance(true, false, null, 0, arg1 == "--welcome");
                     case "quit": Ipc.Send("quit", "", 0); return 0;
                     case "preview": return Preview(arg1);
+                    case "hotspot-check": { string phone; Cli.Out(PhoneHotspot.Connect(out phone, true) ?? "already connected to " + phone); return 0; }
                     case "run": return RunInstance(false, false, arg1 ?? "job", args.Length > 2 ? ParseInt(args[2]) : 0);
                     case "hook": return Hook();
                     case "start": Start(arg1 ?? "cli", FindAgentPid()); return 0;
@@ -497,6 +498,10 @@ namespace LidAwake
         public static readonly string Welcome = Ro
             ? "LidAwake e în tray (cana de cafea). Click pe ea ca să-l pornești; Claude îl pornește singur."
             : "LidAwake is in the tray (the coffee cup). Click it to turn it on; Claude turns it on by itself.";
+        public static readonly string MenuHotspot = Ro ? "Hotspot de pe telefon" : "Phone hotspot";
+        public static readonly string MenuHotspotHint = Ro ? "când îl pornești tu" : "when you turn it on";
+        public static readonly string HotspotOk = Ro ? "Conectat la hotspotul lui {0}. Poți închide capacul." : "Connected to {0}'s hotspot. You can close the lid.";
+        public static readonly string HotspotFail = Ro ? "Nu m-am putut conecta la hotspotul telefonului: {0}" : "Couldn't connect to the phone hotspot: {0}";
         public static readonly string Removed = Ro
             ? "LidAwake a fost dezinstalat.\n\nSetările tale de energie sunt exact cum erau, iar hook-urile și nota din Claude Code au fost scoase."
             : "LidAwake has been uninstalled.\n\nYour power settings are as they were, and the Claude Code hooks and note were removed.";

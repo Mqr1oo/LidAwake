@@ -31,12 +31,13 @@ namespace LidAwake
         readonly MessageWindow window;
         readonly NotifyIcon tray;
         readonly MenuHeader header;
-        readonly ToolStripMenuItem toggleItem, autostartItem;
+        readonly ToolStripMenuItem toggleItem, autostartItem, hotspotItem;
         readonly Icon iconOn, iconOff;
         readonly System.Windows.Forms.Timer timer;
         readonly bool resident;   // keep the tray icon when off
         DateTime lastRelease = DateTime.UtcNow, lastLowBattery = DateTime.MinValue;
-        bool active, manual, exiting;
+        bool active, manual, exiting, hotspotBusy;
+        DateTime lastHotspotTry = DateTime.MinValue;
 
         public TrayApp(bool resident, bool turnOn, string holder, int pid)
         {
@@ -47,9 +48,10 @@ namespace LidAwake
             iconOff = App.Grayed(iconOn);
             toggleItem = TrayMenu.Row("", Glyph.Play, null, delegate { Toggle(); });
             autostartItem = TrayMenu.Row(Strings.MenuAutostart, Glyph.Check, null, delegate { ToggleAutostart(); });
+            hotspotItem = TrayMenu.Row(Strings.MenuHotspot, Glyph.Check, Strings.MenuHotspotHint, delegate { ToggleHotspot(); });
             var quit = TrayMenu.Row(Strings.MenuQuit, Glyph.None, Strings.MenuQuitHint, delegate { Quit("quit from the tray"); });
             ToolStripMenuItem[] rows = resident
-                ? new[] { toggleItem, autostartItem, quit }
+                ? new[] { toggleItem, hotspotItem, autostartItem, quit }
                 : new[] { toggleItem };
             ContextMenuStrip menu = TrayMenu.Build(App.FullIcon(), out header, rows);
 
@@ -91,7 +93,9 @@ namespace LidAwake
         void TurnOnManually()
         {
             manual = true;
-            if (Activate()) tray.ShowBalloonTip(3000, "LidAwake", Strings.BalloonOn, ToolTipIcon.None);
+            if (!Activate()) return;
+            if (Enabled()) StartHotspot();
+            else tray.ShowBalloonTip(3000, "LidAwake", Strings.BalloonOn, ToolTipIcon.None);
         }
 
         bool Activate()
@@ -149,6 +153,48 @@ namespace LidAwake
             tray.Visible = false;
             tray.Dispose();
             window.Dispose();
+        }
+
+        static bool Enabled()
+        {
+            try { return PhoneHotspot.Enabled; } catch { return false; }
+        }
+
+        void ToggleHotspot()
+        {
+            try { PhoneHotspot.Enabled = !PhoneHotspot.Enabled; }
+            catch (Exception ex) { App.Log("Hotspot setting change failed: " + ex.Message); }
+            Refresh();
+            if (Enabled() && active && manual) StartHotspot();
+        }
+
+        // Runs the Wi-Fi list clicking on a worker thread and reports back on the UI thread.
+        void StartHotspot()
+        {
+            if (hotspotBusy || exiting) return;
+            hotspotBusy = true;
+            lastHotspotTry = DateTime.UtcNow;
+            var worker = new Thread(delegate()
+            {
+                string phone = null, error;
+                try { error = PhoneHotspot.Connect(out phone); }
+                catch (Exception ex) { error = ex.Message; }
+                ui.Post(delegate
+                {
+                    hotspotBusy = false;
+                    lastHotspotTry = DateTime.UtcNow;
+                    if (exiting) return;
+                    if (error == null)
+                        tray.ShowBalloonTip(4000, "LidAwake", string.Format(Strings.HotspotOk, phone), ToolTipIcon.None);
+                    else
+                    {
+                        App.Log("Phone hotspot: " + error);
+                        tray.ShowBalloonTip(6000, "LidAwake", string.Format(Strings.HotspotFail, error), ToolTipIcon.Warning);
+                    }
+                }, null);
+            });
+            worker.IsBackground = true;
+            worker.Start();
         }
 
         void ToggleAutostart()
@@ -241,6 +287,10 @@ namespace LidAwake
                 return;
             }
 
+            // turned on by hand with "Phone hotspot" ticked: stay online through the phone
+            if (manual && !hotspotBusy && now - lastHotspotTry > TimeSpan.FromMinutes(2) && Enabled() && !PhoneHotspot.Online())
+                StartHotspot();
+
             if (!manual && holds.Count == 0 && now - lastRelease >= Linger)
                 Deactivate("all jobs done", true);
             else
@@ -278,6 +328,8 @@ namespace LidAwake
             bool auto = false;
             try { auto = App.Autostart; } catch { }
             ((RowInfo)autostartItem.Tag).Checked = auto;
+            ((RowInfo)hotspotItem.Tag).Checked = Enabled();
+            hotspotItem.Invalidate();
             toggleItem.Invalidate();
             autostartItem.Invalidate();
         }

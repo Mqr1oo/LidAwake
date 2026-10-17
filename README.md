@@ -44,6 +44,25 @@ it**. That's all:
 Downloading a newer version and double-clicking it updates in place. `LidAwake connect` / `LidAwake disconnect`
 add or remove the Claude Code part later.
 
+## Phone hotspot (optional)
+
+Tick **Phone hotspot** in the tray menu. Now, when you turn LidAwake on yourself, it also turns on your phone's
+hotspot and connects the laptop to it, so the work stays online once you leave your Wi-Fi with the laptop in
+a bag. It opens the Wi-Fi list for a moment, presses **Connect** on your phone, then checks that the laptop is
+really online and tells you either way. If the internet drops while LidAwake is on, it tries again every
+2 minutes.
+
+**One-time setup first.** Without it the option can't work:
+
+1. Link your Android phone with **Phone Link** (on the phone: **Link to Windows**). The phone then shows up in
+   **Settings → Bluetooth & devices → Mobile devices**.
+2. In **Phone Link → Settings → Features → Instant hotspot**, click **Set up** and approve it on the phone.
+3. Check it: open the Wi-Fi list on the laptop. Your phone should be listed as *"Mobile hotspot, off"* even
+   while its hotspot is off. Clicking it should start the hotspot. If that works, LidAwake can do it.
+
+Keep Bluetooth on, on both the laptop and the phone. Instant hotspot works only with phones that support it
+(many Android phones; not iPhone), and it uses your mobile data.
+
 ## Uninstall
 
 **Settings → Apps → Installed apps → LidAwake → Uninstall**, like any other app (or run `LidAwake uninstall`).

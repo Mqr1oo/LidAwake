@@ -225,6 +225,9 @@ namespace LidAwake
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool ExitWindowsEx(uint flags, uint reason);
 
+        [DllImport("user32.dll")]
+        public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extraInfo);
+
         // ---- console output for a windowed exe ---------------------------------------------
 
         [DllImport("kernel32.dll")]
