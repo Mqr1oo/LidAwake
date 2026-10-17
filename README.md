@@ -79,7 +79,7 @@ How it decides:
 ## Command line
 
 ```
-LidAwake              turn on until you press Stop in the tray
+LidAwake              double-click: installs, or turns on once installed
 LidAwake start [id]   keep awake for a job          LidAwake stop [id]   that job is done
 LidAwake off          stop now                      LidAwake status      show state
 LidAwake restore      put power settings back       LidAwake hook        used by the hooks above
