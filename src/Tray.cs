@@ -31,7 +31,7 @@ namespace LidAwake
         readonly MessageWindow window;
         readonly NotifyIcon tray;
         readonly MenuHeader header;
-        readonly ToolStripMenuItem toggleItem, autostartItem, hotspotItem, timerItem, batteryItem, notifyItem;
+        readonly ToolStripMenuItem toggleItem, autostartItem, hotspotItem, timerItem, batteryItem, notifyItem, endItem;
         readonly Icon iconOn, iconOff;
         readonly System.Windows.Forms.Timer timer, recheck;
         readonly bool resident;   // keep the tray icon when off
@@ -41,6 +41,9 @@ namespace LidAwake
         DateTime? until;   // timer: turn off at this time (UTC)
         DateTime? offlineSince;   // on the phone's hotspot but no internet since then
         bool onHotspot;           // connected to the phone since the lid closed
+        DateTime? hotSince;       // lid closed and too hot since then
+        DateTime lastHeat = DateTime.MinValue, lastTempLog = DateTime.MinValue, lastTip = DateTime.MinValue;
+        string temps;             // last CPU / GPU reading, for the tooltip
         int timerChoice;   // 0 none, 1 one hour, 2 two hours, 3 until 8:00
 
         public TrayApp(bool resident, bool turnOn, string holder, int pid)
@@ -54,13 +57,14 @@ namespace LidAwake
             toggleItem = TrayMenu.Row("", Glyph.Play, null, delegate { Toggle(); });
             timerItem = TrayMenu.Row(Strings.MenuTimer, Glyph.None, null, delegate { CycleTimer(); });
             batteryItem = TrayMenu.Row(Strings.MenuBattery, Glyph.None, null, delegate { CycleBattery(); });
+            endItem = TrayMenu.Row(Strings.MenuEnd, Glyph.None, null, delegate { SetEnd(!Prefs.ShutDownWhenDone); });
             hotspotItem = TrayMenu.Row(Strings.MenuHotspot, Glyph.Check, null, delegate { ToggleHotspot(); });
             notifyItem = TrayMenu.Row(Strings.MenuNotify, Glyph.Check, null, delegate { SetNotify(!Prefs.NotifyDone); });
             autostartItem = TrayMenu.Row(Strings.MenuAutostart, Glyph.Check, null, delegate { ToggleAutostart(); });
             var quit = TrayMenu.Row(Strings.MenuQuit, Glyph.None, null, delegate { Quit("quit from the tray"); });
             ToolStripItem[] rows = resident
                 ? new ToolStripItem[] { toggleItem, timerItem, new ToolStripSeparator(),
-                    batteryItem, hotspotItem, notifyItem, autostartItem, new ToolStripSeparator(), quit }
+                    batteryItem, endItem, hotspotItem, notifyItem, autostartItem, new ToolStripSeparator(), quit }
                 : new ToolStripItem[] { toggleItem };
             ContextMenuStrip menu = TrayMenu.Build(App.FullIcon(), out header, rows);
             // the timer and battery rows change on each click, so keep the menu open for them
@@ -68,7 +72,7 @@ namespace LidAwake
             {
                 if (e.CloseReason != ToolStripDropDownCloseReason.ItemClicked) return;
                 ToolStripItem under = menu.GetItemAt(menu.PointToClient(Cursor.Position));
-                if (under == timerItem || under == batteryItem) e.Cancel = true;
+                if (under == timerItem || under == batteryItem || under == endItem) e.Cancel = true;
             };
 
             tray = new NotifyIcon();
@@ -77,6 +81,7 @@ namespace LidAwake
             {
                 if (e.Button == MouseButtons.Left) Toggle();   // one click: on / off
             };
+            tray.MouseMove += delegate { ReadTemps(); };   // hover: fresh temperatures in the tooltip
             Refresh();
             tray.Visible = true;
 
@@ -158,7 +163,11 @@ namespace LidAwake
             Refresh();
 
             if (!resident) CloseUi();
-            if (honorLid && lidClosed) Keeper.Hibernate("all work is done and the lid is closed");
+            if (honorLid && lidClosed)
+            {
+                if (Prefs.ShutDownWhenDone) Keeper.ShutDown("all work is done and the lid is closed");
+                else Keeper.Hibernate("all work is done and the lid is closed");
+            }
             if (!resident) ExitThread();
         }
 
@@ -266,6 +275,36 @@ namespace LidAwake
             Refresh();
         }
 
+        void SetEnd(bool shutDown)
+        {
+            try { Prefs.ShutDownWhenDone = shutDown; App.Log("When done with the lid closed: " + (shutDown ? "shut down" : "hibernate") + "."); }
+            catch (Exception ex) { App.Log("End setting change failed: " + ex.Message); }
+            Refresh();
+        }
+
+        void SetHeat(int celsius)
+        {
+            try { Prefs.HeatLimit = celsius; App.Log("Heat limit: " + (Prefs.HeatLimit > 0 ? Prefs.HeatLimit + "°C" : "off") + "."); }
+            catch (Exception ex) { App.Log("Heat setting change failed: " + ex.Message); }
+            Refresh();
+        }
+
+        // Hovering the cup: read the temperatures (at most every 2 s) and show them under on / off.
+        void ReadTemps()
+        {
+            DateTime now = DateTime.UtcNow;
+            if (exiting || now - lastTip < TimeSpan.FromSeconds(2)) return;
+            lastTip = now;
+            temps = Thermal.Summary();
+            SetTip();
+        }
+
+        void SetTip()
+        {
+            string text = (active ? Strings.TipOn : Strings.TipOff) + (temps != null ? "\n" + temps : "");
+            tray.Text = text.Length > 63 ? text.Substring(0, 63) : text;   // Windows' limit
+        }
+
         void SetNotify(bool on)
         {
             try { Prefs.NotifyDone = on; }
@@ -357,6 +396,12 @@ namespace LidAwake
                 case "notify":
                     ui.Post(delegate { SetNotify(id == "on"); }, null);
                     return "ok";
+                case "heat":
+                    ui.Post(delegate { SetHeat(ParseNumber(id)); }, null);
+                    return "ok";
+                case "end":
+                    ui.Post(delegate { SetEnd(id == "shutdown"); }, null);
+                    return "ok";
                 case "hotspot":
                     ui.Post(delegate { SetHotspot(id == "on"); }, null);
                     return "ok";
@@ -400,6 +445,35 @@ namespace LidAwake
                 Notify(Strings.TimerDone);
             }
 
+            // Too hot with the lid shut (say, in a bag): hibernate, so nothing is lost and nothing cooks.
+            // The GPU reading here comes only from sources that don't wake a sleeping dedicated GPU.
+            if (keeper.LidClosed)
+            {
+                int cpu = Thermal.Cpu(), gpu = Thermal.Gpu(false), hot = Math.Max(cpu, gpu), limit = Prefs.HeatLimit;
+                if (now - lastTempLog >= TimeSpan.FromMinutes(5))
+                {
+                    lastTempLog = now;
+                    App.Log("Lid closed: CPU " + (cpu > 0 ? cpu + "°C" : "n/a") + ", GPU " + (gpu > 0 ? gpu + "°C" : "n/a") + ".");
+                }
+                if (limit > 0 && hot >= limit)
+                {
+                    if (!hotSince.HasValue) { hotSince = now; App.Log("Hot: " + hot + "°C with the lid closed (limit " + limit + "°C)."); }
+                    if (now - hotSince.Value >= TimeSpan.FromMinutes(1) && now - lastHeat > TimeSpan.FromMinutes(3))
+                    {
+                        lastHeat = now;
+                        hotSince = null;
+                        Keeper.Hibernate(hot + "°C for a minute with the lid closed (limit " + limit + "°C)");
+                        return;
+                    }
+                }
+                else hotSince = null;
+            }
+            else
+            {
+                hotSince = null;
+                lastTempLog = DateTime.MinValue;   // log right away on the next lid close
+            }
+
             int battery = PowerPlan.BatteryPercentOnBattery();
             if (keeper.LidClosed && battery >= 0 && battery <= Prefs.HibernateAt && now - lastLowBattery > TimeSpan.FromMinutes(3))
             {
@@ -439,7 +513,9 @@ namespace LidAwake
 
         string Describe()
         {
-            string prefs = "\nSettings: hibernate at " + Prefs.HibernateAt + "% battery with the lid closed; notify when done "
+            string prefs = "\nSettings: hibernate at " + Prefs.HibernateAt + "% battery with the lid closed; heat limit "
+                + (Prefs.HeatLimit > 0 ? Prefs.HeatLimit + "°C" : "off") + "; when done with the lid closed: "
+                + (Prefs.ShutDownWhenDone ? "shut down" : "hibernate") + "; notify when done "
                 + (Prefs.NotifyDone ? "on" : "off") + "; phone hotspot " + (Enabled() ? "on" : "off");
             if (!active) return "running in the tray, off" + prefs;
             var parts = new List<string>();
@@ -454,7 +530,7 @@ namespace LidAwake
         {
             if (exiting || header == null) return;
             tray.Icon = active ? iconOn : iconOff;
-            tray.Text = active ? Strings.TrayTipOn : Strings.TrayTipOff;
+            SetTip();
 
             string s;
             if (!active) s = Strings.StatusOff;
@@ -477,6 +553,8 @@ namespace LidAwake
             timerItem.Invalidate();
             ((RowInfo)batteryItem.Tag).Hint = Prefs.HibernateAt + "%";
             batteryItem.Invalidate();
+            ((RowInfo)endItem.Tag).Hint = Prefs.ShutDownWhenDone ? Strings.EndShutdown : Strings.EndHibernate;
+            endItem.Invalidate();
             ((RowInfo)notifyItem.Tag).Checked = Prefs.NotifyDone;
             notifyItem.Invalidate();
             toggleItem.Invalidate();

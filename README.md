@@ -26,7 +26,8 @@ for as long as the job runs.
 | Screen | turns off as usual. On Modern Standby laptops a screen that turns off puts the whole laptop into standby and the job stops, so there it turns **black** at that moment instead (on OLED, black pixels are off, so nothing burns in). Any key or mouse move brings it back. If a video keeps the screen on, nothing changes | as before |
 | Lid closed while on battery | power mode *Best power efficiency* (Settings → System → Power) | your mode again, the next time the laptop is on battery |
 | Battery drops to your threshold (10% by default) with the lid closed | hibernates so nothing is lost; the job carries on when you open it | |
-| Job ends while the lid is closed | | hibernates (everything saved, laptop off) |
+| CPU or GPU stays at the heat limit (95°C by default) for a minute with the lid closed, say in a bag | hibernates, same as above | |
+| Job ends while the lid is closed | | hibernates (everything saved, laptop off), or shuts down if you pick that under *When done* |
 
 Your original values are saved to `%LOCALAPPDATA%\LidAwake\restore.txt` **before** anything changes. If
 LidAwake is ever killed, the next start puts them back first. You can also run `LidAwake restore` at any time.
@@ -52,6 +53,12 @@ add or remove the Claude Code part later.
   It turns LidAwake on, and when the time is up LidAwake turns off (and hibernates if the lid is closed), unless
   Claude is still working. From a terminal: `LidAwake for 2h`, `LidAwake until 8:00`.
 - **Hibernate threshold.** *Hibernate at* changes on each click (5 to 30%), or `LidAwake battery 15`.
+- **When done.** *When done* switches between hibernate and shut down, or `LidAwake end shutdown`.
+- **Heat limit.** With the lid closed, if the CPU or GPU stays at 95°C for a minute, it hibernates.
+  `LidAwake heat 90` changes the limit, `LidAwake heat off` turns it off.
+- **Temperatures.** Hover the cup to see the CPU and GPU temperature. They come from the laptop maker's sensor
+  on ASUS laptops, and otherwise from Windows (the ACPI thermal zone and the graphics driver, like Task Manager).
+  No admin needed.
 - **Notify when done** (on by default): a notification when Claude finishes a job that took longer than
   2 minutes, and when a timer ends. `LidAwake notify off` turns it off.
 
@@ -127,6 +134,8 @@ LidAwake hooks        print the hooks JSON
 LidAwake for 2h       on now, off after 2h (90m, 1.5h; "for off" clears it)
 LidAwake until 8:00   on now, off at 8:00
 LidAwake battery 15   hibernate at 15% with the lid closed (3-50)
+LidAwake heat 90      hibernate if CPU/GPU stays this hot, lid closed (70-100, off)
+LidAwake end shutdown shut down instead of hibernating when done (end hibernate)
 LidAwake notify on|off    LidAwake hotspot on|off
 ```
 

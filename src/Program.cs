@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Keeps a Windows laptop working with the lid closed while a job runs")]
 [assembly: AssemblyProduct("LidAwake")]
 [assembly: AssemblyCopyright("MIT License")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace LidAwake
 {
@@ -49,6 +49,8 @@ namespace LidAwake
                     case "until": return Until(arg1);
                     case "battery": return Battery(arg1);
                     case "notify": return OnOff("notify", arg1, "Notify when done:");
+                    case "heat": return Heat(arg1);
+                    case "end": return End(arg1);
                     case "hotspot": return OnOff("hotspot", arg1, "Phone hotspot (while on with the lid closed):");
                     case "restore": return Restore();
                     case "install": return Installer.Install(false, arg1 == "--connect");
@@ -79,6 +81,7 @@ namespace LidAwake
                 var toggle = TrayMenu.Row(on ? Strings.MenuTurnOff : Strings.MenuTurnOn, on ? Glyph.Stop : Glyph.Play, null, null);
                 var timer = TrayMenu.Row(Strings.MenuTimer, Glyph.None, on ? string.Format(Strings.TimerUntil, "08:00") : Strings.TimerOff, null);
                 var battery = TrayMenu.Row(Strings.MenuBattery, Glyph.None, "10%", null);
+                var end = TrayMenu.Row(Strings.MenuEnd, Glyph.None, Strings.EndHibernate, null);
                 var hotspot = TrayMenu.Row(Strings.MenuHotspot, Glyph.Check, null, null);
                 var notify = TrayMenu.Row(Strings.MenuNotify, Glyph.Check, null, null);
                 ((RowInfo)notify.Tag).Checked = true;
@@ -86,7 +89,7 @@ namespace LidAwake
                 ((RowInfo)auto.Tag).Checked = true;
                 var quit = TrayMenu.Row(Strings.MenuQuit, Glyph.None, null, null);
                 ContextMenuStrip menu = TrayMenu.Build(App.FullIcon(), out header, toggle, timer, new ToolStripSeparator(),
-                    battery, hotspot, notify, auto, new ToolStripSeparator(), quit);
+                    battery, end, hotspot, notify, auto, new ToolStripSeparator(), quit);
                 header.Set(on, on ? string.Format(Strings.StatusUntil, "08:00") : Strings.StatusOff, null);
                 menu.Show(new Point(-4000, -4000));
                 Application.DoEvents();
@@ -247,6 +250,26 @@ namespace LidAwake
             return ToTray("battery", n.ToString(CultureInfo.InvariantCulture), "Hibernates at " + n + "% battery with the lid closed.");
         }
 
+        // "LidAwake heat 90" / "heat off": hibernate when the CPU or GPU stays this hot with the lid closed.
+        static int Heat(string arg)
+        {
+            int n = arg == "off" ? 0 : ParseIntOr(arg, -1);
+            if (n != 0 && (n < Prefs.MinHeat || n > Prefs.MaxHeat))
+            {
+                Cli.Out("Usage: LidAwake heat <" + Prefs.MinHeat + "-" + Prefs.MaxHeat + "> | off   (now " + (Prefs.HeatLimit > 0 ? Prefs.HeatLimit + "" : "off") + ")");
+                return 2;
+            }
+            return ToTray("heat", n.ToString(CultureInfo.InvariantCulture),
+                n == 0 ? "Heat limit off." : "Hibernates when the CPU or GPU stays at " + n + "°C for a minute with the lid closed.");
+        }
+
+        // "LidAwake end hibernate|shutdown": what happens when the work ends with the lid closed.
+        static int End(string arg)
+        {
+            if (arg != "hibernate" && arg != "shutdown") { Cli.Out("Usage: LidAwake end hibernate|shutdown"); return 2; }
+            return ToTray("end", arg, "When the work ends with the lid closed: " + (arg == "shutdown" ? "shut down." : "hibernate."));
+        }
+
         static int OnOff(string cmd, string arg, string what)
         {
             if (arg != "on" && arg != "off") { Cli.Out("Usage: LidAwake " + cmd + " on|off"); return 2; }
@@ -281,6 +304,7 @@ namespace LidAwake
             var sb = new StringBuilder();
             string reply = Ipc.Query("status");
             sb.AppendLine("LidAwake " + (reply ?? "is not running"));
+            sb.AppendLine("Temperature now: " + (Thermal.Summary() ?? "not available on this PC"));
             try
             {
                 Guid scheme = PowerPlan.ActiveScheme();
@@ -527,6 +551,13 @@ namespace LidAwake
                     Console.WriteLine();
                 }
             }
+            else
+            {
+                // piped (Claude Code, scripts): UTF-8, so "°C" survives
+                var o = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false));
+                o.AutoFlush = true;
+                Console.SetOut(o);
+            }
         }
 
         public static void Out(string s) { Prepare(); Console.WriteLine(s); }
@@ -557,8 +588,12 @@ namespace LidAwake
     {
         static readonly bool Ro = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ro";
 
-        public static readonly string TrayTipOn = Ro ? "LidAwake: pornit - capacul închis nu-l adoarme" : "LidAwake: on - closing the lid won't sleep";
-        public static readonly string TrayTipOff = Ro ? "LidAwake: oprit - click ca să-l pornești" : "LidAwake: off - click to turn on";
+        public static readonly string TipOn = Ro ? "LidAwake: pornit" : "LidAwake: on";
+        public static readonly string TipOff = Ro ? "LidAwake: oprit" : "LidAwake: off";
+        public static readonly string GpuOff = Ro ? "oprit" : "off";
+        public static readonly string MenuEnd = Ro ? "La final" : "When done";
+        public static readonly string EndHibernate = Ro ? "hibernare" : "hibernate";
+        public static readonly string EndShutdown = Ro ? "oprire" : "shut down";
         public static readonly string BadgeOn = Ro ? "PORNIT" : "ON";
         public static readonly string BadgeOff = Ro ? "OPRIT" : "OFF";
         public static readonly string MenuTurnOn = Ro ? "Pornește" : "Turn on";
@@ -608,6 +643,8 @@ namespace LidAwake
   LidAwake for 2h     on now, off after 2h (also 90m, 1.5h; ""for off"" clears the timer)
   LidAwake until 8:00 on now, off at 8:00
   LidAwake battery 15 hibernate at 15% battery when the lid is closed (3-50, default 10)
+  LidAwake heat 90    hibernate if the CPU or GPU stays this hot for a minute, lid closed (70-100 or off, default 95)
+  LidAwake end hibernate|shutdown   what to do when the work ends with the lid closed
   LidAwake notify on|off   balloon when Claude finishes a long job or a timer ends
   LidAwake hotspot on|off  connect to the phone's hotspot while on with the lid closed";
     }

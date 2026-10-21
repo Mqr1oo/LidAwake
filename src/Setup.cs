@@ -344,8 +344,10 @@ cup: grey = off, coral = on.
   the work. So at that moment LidAwake shows a black screen instead (safe for OLED); any key or mouse move
   brings the desktop back. Locking the PC (Win+L) still pauses the work after ~30 s: tell the user to close
   the lid instead of locking.
-- **When work ends with the lid closed,** the laptop hibernates (powers off, everything saved). It also hibernates
-  when the battery reaches the threshold (default 10%) with the lid closed; the work resumes when it is opened.
+- **When work ends with the lid closed,** the laptop hibernates (powers off, everything saved), or shuts down if
+  the user chose that. With the lid closed it also hibernates when the battery reaches the threshold (default 10%)
+  or when the CPU or GPU stays at the heat limit (default 95°C) for a minute; the work resumes when it is opened.
+- **Temperatures:** hovering the tray cup shows the CPU and GPU temperature; `LidAwake.exe status` prints them.
 - **Notifications** (on by default): ""Claude is done"" after jobs longer than 2 minutes, and when a timer ends.
 - If another app (e.g. G-Helper on ASUS laptops) resets the lid setting, LidAwake sets it again within a second.
 
@@ -358,6 +360,8 @@ Run these when the user asks for it or the task needs it. Each prints what it di
 | keep the laptop awake for a while / overnight | `LidAwake.exe for 2h` (or `90m`, `1.5h`), `LidAwake.exe until 8:00`; `for off` clears the timer |
 | turn it on now / off now | `LidAwake.exe on` / `LidAwake.exe off` (off with the lid closed hibernates the laptop) |
 | hibernate at another battery level | `LidAwake.exe battery 15` (3-50) |
+| another heat limit, or none | `LidAwake.exe heat 90` (70-100) / `LidAwake.exe heat off` |
+| shut down instead of hibernating when the work ends with the lid closed | `LidAwake.exe end shutdown` / `end hibernate` |
 | notifications on or off | `LidAwake.exe notify on` / `off` |
 | the laptop on the phone's hotspot whenever LidAwake is on and the lid is closed (even from Wi-Fi) | `LidAwake.exe hotspot on` / `off` (needs Instant hotspot set up in Phone Link first) |
 | a detached process of yours must outlive your turn | `LidAwake.exe start <name>` before it, `LidAwake.exe stop <name>` when it is done |

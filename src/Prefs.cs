@@ -38,6 +38,22 @@ namespace LidAwake
             set { Set("HibernateAt", Math.Max(MinBattery, Math.Min(MaxBattery, value))); }
         }
 
+        public const int MinHeat = 70, MaxHeat = 100;
+
+        // Hibernate when the CPU or GPU stays at or above this for a minute with the lid closed (0 = off).
+        public static int HeatLimit
+        {
+            get { int v = Get("HeatLimit", 95); return v == 0 || (v >= MinHeat && v <= MaxHeat) ? v : 95; }
+            set { Set("HeatLimit", value <= 0 ? 0 : Math.Max(MinHeat, Math.Min(MaxHeat, value))); }
+        }
+
+        // When the work ends with the lid closed: shut down instead of hibernating.
+        public static bool ShutDownWhenDone
+        {
+            get { return Get("ShutDownWhenDone", 0) == 1; }
+            set { Set("ShutDownWhenDone", value ? 1 : 0); }
+        }
+
         // A balloon when Claude finishes a long job or a timer runs out.
         public static bool NotifyDone
         {

@@ -444,6 +444,20 @@ namespace LidAwake
             WatchPowerMode();
         }
 
+        // Powers the laptop off. Open apps are asked to close first, so unsaved work in one can stop it.
+        public static void ShutDown(string why)
+        {
+            App.Log("Shutting down: " + why);
+            if (App.DryRun) return;
+            Native.EnableShutdownPrivilege();
+            const uint Shutdown = 0x1, PowerOff = 0x8, ForceIfHung = 0x10, PlannedReason = 0x80000000;
+            if (!Native.ExitWindowsEx(Shutdown | PowerOff | ForceIfHung, PlannedReason))
+            {
+                App.Log("Shutdown failed (error " + Marshal.GetLastWin32Error() + "), hibernating instead.");
+                Hibernate("shutdown failed");
+            }
+        }
+
         // Hibernate = everything is saved to disk and the laptop powers off; opening it resumes exactly
         // where it was. Falls back to sleep if hibernation is turned off.
         public static void Hibernate(string why)
