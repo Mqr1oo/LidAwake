@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Keeps a Windows laptop working with the lid closed while a job runs")]
 [assembly: AssemblyProduct("LidAwake")]
 [assembly: AssemblyCopyright("MIT License")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.5.1.0")]
+[assembly: AssemblyFileVersion("1.5.1.0")]
 
 namespace LidAwake
 {
@@ -247,7 +247,8 @@ namespace LidAwake
                 Cli.Out("Usage: LidAwake battery <" + Prefs.MinBattery + "-" + Prefs.MaxBattery + ">   (now " + Prefs.HibernateAt + ")");
                 return 2;
             }
-            return ToTray("battery", n.ToString(CultureInfo.InvariantCulture), "Hibernates at " + n + "% battery with the lid closed.");
+            return ToTray("battery", n.ToString(CultureInfo.InvariantCulture),
+                "At " + n + "% battery with the lid closed it hibernates, or shuts down if \"When done\" is set to shut down.");
         }
 
         // "LidAwake heat 90" / "heat off": hibernate when the CPU or GPU stays this hot with the lid closed.
@@ -616,6 +617,7 @@ namespace LidAwake
         public static readonly string TimerOff = Ro ? "oprit" : "off";
         public static readonly string TimerUntil = Ro ? "până la {0}" : "until {0}";
         public static readonly string MenuBattery = Ro ? "Hibernează la" : "Hibernate at";
+        public static readonly string MenuBatteryShutDown = Ro ? "Oprește la" : "Shut down at";
         public static readonly string MenuNotify = Ro ? "Notificare la final" : "Notify when done";
         public static readonly string ClaudeDone = Ro ? "Claude a terminat (a lucrat {0} min)." : "Claude is done (worked {0} min).";
         public static readonly string TimerDone = Ro ? "Timer-ul s-a terminat. LidAwake se oprește dacă nu mai lucrează nimic." : "The timer is over. LidAwake turns off unless something is still working.";
@@ -642,9 +644,9 @@ namespace LidAwake
 
   LidAwake for 2h     on now, off after 2h (also 90m, 1.5h; ""for off"" clears the timer)
   LidAwake until 8:00 on now, off at 8:00
-  LidAwake battery 15 hibernate at 15% battery when the lid is closed (3-50, default 10)
+  LidAwake battery 15 at 15% battery with the lid closed: hibernate, or shut down if ""end shutdown"" (3-50, default 10)
   LidAwake heat 90    hibernate if the CPU or GPU stays this hot for a minute, lid closed (70-100 or off, default 95)
-  LidAwake end hibernate|shutdown   what to do when the work ends with the lid closed
+  LidAwake end hibernate|shutdown   what to do when the work ends or the battery runs low, lid closed
   LidAwake notify on|off   balloon when Claude finishes a long job or a timer ends
   LidAwake hotspot on|off  connect to the phone's hotspot while on with the lid closed";
     }

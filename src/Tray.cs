@@ -478,7 +478,10 @@ namespace LidAwake
             if (keeper.LidClosed && battery >= 0 && battery <= Prefs.HibernateAt && now - lastLowBattery > TimeSpan.FromMinutes(3))
             {
                 lastLowBattery = now;
-                Keeper.Hibernate("battery at " + battery + "% with the lid closed");
+                // what the user picked under "When done": shut down, or hibernate (the job carries on when opened)
+                string why = "battery at " + battery + "% with the lid closed";
+                if (Prefs.ShutDownWhenDone) Keeper.ShutDown(why);
+                else Keeper.Hibernate(why);
                 return;
             }
 
@@ -551,6 +554,7 @@ namespace LidAwake
             ((RowInfo)timerItem.Tag).Hint = until.HasValue
                 ? string.Format(Strings.TimerUntil, until.Value.ToLocalTime().ToString("HH:mm")) : Strings.TimerOff;
             timerItem.Invalidate();
+            batteryItem.Text = Prefs.ShutDownWhenDone ? Strings.MenuBatteryShutDown : Strings.MenuBattery;
             ((RowInfo)batteryItem.Tag).Hint = Prefs.HibernateAt + "%";
             batteryItem.Invalidate();
             ((RowInfo)endItem.Tag).Hint = Prefs.ShutDownWhenDone ? Strings.EndShutdown : Strings.EndHibernate;

@@ -25,7 +25,7 @@ for as long as the job runs.
 | *Put the computer to sleep after…* and the lock-screen sleep timeout | *Never* (on Modern Standby laptops a keep-awake request alone stops working ~5 min after this timer runs out) | your setting again |
 | Screen | turns off as usual. On Modern Standby laptops a screen that turns off puts the whole laptop into standby and the job stops, so there it turns **black** at that moment instead (on OLED, black pixels are off, so nothing burns in). Any key or mouse move brings it back. If a video keeps the screen on, nothing changes | as before |
 | Lid closed while on battery | power mode *Best power efficiency* (Settings → System → Power) | your mode again, the next time the laptop is on battery |
-| Battery drops to your threshold (10% by default) with the lid closed | hibernates so nothing is lost; the job carries on when you open it | |
+| Battery drops to your threshold (10% by default) with the lid closed | hibernates so nothing is lost; the job carries on when you open it (or shuts down if you picked that under *When done*) | |
 | CPU or GPU stays at the heat limit (95°C by default) for a minute with the lid closed, say in a bag | hibernates, same as above | |
 | Job ends while the lid is closed | | hibernates (everything saved, laptop off), or shuts down if you pick that under *When done* |
 
@@ -53,7 +53,8 @@ add or remove the Claude Code part later.
   It turns LidAwake on, and when the time is up LidAwake turns off (and hibernates if the lid is closed), unless
   Claude is still working. From a terminal: `LidAwake for 2h`, `LidAwake until 8:00`.
 - **Hibernate threshold.** *Hibernate at* changes on each click (5 to 30%), or `LidAwake battery 15`.
-- **When done.** *When done* switches between hibernate and shut down, or `LidAwake end shutdown`.
+- **When done.** *When done* switches between hibernate and shut down, or `LidAwake end shutdown`. The same choice
+  applies when the battery runs low with the lid closed; the menu row then reads *Shut down at 15%*.
 - **Heat limit.** With the lid closed, if the CPU or GPU stays at 95°C for a minute, it hibernates.
   `LidAwake heat 90` changes the limit, `LidAwake heat off` turns it off.
 - **Temperatures.** Hover the cup to see the CPU and GPU temperature. They come from the laptop maker's sensor
