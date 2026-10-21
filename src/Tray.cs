@@ -16,44 +16,60 @@ namespace LidAwake
         // A job that has said nothing for this long is assumed dead (e.g. the turn was interrupted with Esc,
         // which fires no Stop hook). Long autonomous runs refresh it on every Stop that still has background work.
         static readonly TimeSpan HoldTimeout = TimeSpan.FromHours(4);
-        // Hibernate when the battery drops to this with the lid closed.
-        const int LowBattery = 10;
 
         sealed class Hold
         {
             public DateTime LastSeen;
+            public DateTime Started = DateTime.UtcNow;
             public IntPtr Process;   // the agent's process; when it exits, the hold goes away
         }
 
         readonly Keeper keeper = new Keeper();
+        readonly ScreenGuard guard;
         readonly Dictionary<string, Hold> holds = new Dictionary<string, Hold>(StringComparer.Ordinal);
         readonly SynchronizationContext ui;
         readonly MessageWindow window;
         readonly NotifyIcon tray;
         readonly MenuHeader header;
-        readonly ToolStripMenuItem toggleItem, autostartItem, hotspotItem;
+        readonly ToolStripMenuItem toggleItem, autostartItem, hotspotItem, timerItem, batteryItem, notifyItem;
         readonly Icon iconOn, iconOff;
-        readonly System.Windows.Forms.Timer timer;
+        readonly System.Windows.Forms.Timer timer, recheck;
         readonly bool resident;   // keep the tray icon when off
         DateTime lastRelease = DateTime.UtcNow, lastLowBattery = DateTime.MinValue;
         bool active, manual, exiting, hotspotBusy;
         DateTime lastHotspotTry = DateTime.MinValue;
+        DateTime? until;   // timer: turn off at this time (UTC)
+        DateTime? offlineSince;   // on the phone's hotspot but no internet since then
+        bool onHotspot;           // connected to the phone since the lid closed
+        int timerChoice;   // 0 none, 1 one hour, 2 two hours, 3 until 8:00
 
         public TrayApp(bool resident, bool turnOn, string holder, int pid)
         {
             this.resident = resident;
             ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+            guard = new ScreenGuard(keeper);
 
             iconOn = App.TrayIcon();
             iconOff = App.Grayed(iconOn);
             toggleItem = TrayMenu.Row("", Glyph.Play, null, delegate { Toggle(); });
+            timerItem = TrayMenu.Row(Strings.MenuTimer, Glyph.None, null, delegate { CycleTimer(); });
+            batteryItem = TrayMenu.Row(Strings.MenuBattery, Glyph.None, null, delegate { CycleBattery(); });
+            hotspotItem = TrayMenu.Row(Strings.MenuHotspot, Glyph.Check, null, delegate { ToggleHotspot(); });
+            notifyItem = TrayMenu.Row(Strings.MenuNotify, Glyph.Check, null, delegate { SetNotify(!Prefs.NotifyDone); });
             autostartItem = TrayMenu.Row(Strings.MenuAutostart, Glyph.Check, null, delegate { ToggleAutostart(); });
-            hotspotItem = TrayMenu.Row(Strings.MenuHotspot, Glyph.Check, Strings.MenuHotspotHint, delegate { ToggleHotspot(); });
-            var quit = TrayMenu.Row(Strings.MenuQuit, Glyph.None, Strings.MenuQuitHint, delegate { Quit("quit from the tray"); });
-            ToolStripMenuItem[] rows = resident
-                ? new[] { toggleItem, hotspotItem, autostartItem, quit }
-                : new[] { toggleItem };
+            var quit = TrayMenu.Row(Strings.MenuQuit, Glyph.None, null, delegate { Quit("quit from the tray"); });
+            ToolStripItem[] rows = resident
+                ? new ToolStripItem[] { toggleItem, timerItem, new ToolStripSeparator(),
+                    batteryItem, hotspotItem, notifyItem, autostartItem, new ToolStripSeparator(), quit }
+                : new ToolStripItem[] { toggleItem };
             ContextMenuStrip menu = TrayMenu.Build(App.FullIcon(), out header, rows);
+            // the timer and battery rows change on each click, so keep the menu open for them
+            menu.Closing += delegate(object s, ToolStripDropDownClosingEventArgs e)
+            {
+                if (e.CloseReason != ToolStripDropDownCloseReason.ItemClicked) return;
+                ToolStripItem under = menu.GetItemAt(menu.PointToClient(Cursor.Position));
+                if (under == timerItem || under == batteryItem) e.Cancel = true;
+            };
 
             tray = new NotifyIcon();
             tray.ContextMenuStrip = menu;
@@ -67,6 +83,8 @@ namespace LidAwake
             window = new MessageWindow();
             window.Command += OnCommand;
             window.LidChanged += keeper.OnLid;
+            window.LidChanged += delegate { ui.Post(delegate { Evaluate(); }, null); };   // hotspot right away
+            window.LockChanged += guard.SessionLocked;
             window.SessionEnding += delegate { Quit("Windows is shutting down / signing out"); };
             window.ListenForLid();   // Windows replies right away with the current lid state
 
@@ -74,6 +92,11 @@ namespace LidAwake
             timer.Interval = 5000;
             timer.Tick += delegate { Evaluate(); };
             timer.Start();
+
+            recheck = new System.Windows.Forms.Timer();
+            recheck.Interval = 1000;
+            recheck.Tick += delegate { if (active) keeper.Reassert(); };
+            recheck.Start();
 
             if (turnOn) TurnOnManually();
             else if (holder != null) { Add(holder, pid); Activate(); }
@@ -94,8 +117,7 @@ namespace LidAwake
         {
             manual = true;
             if (!Activate()) return;
-            if (Enabled()) StartHotspot();
-            else tray.ShowBalloonTip(3000, "LidAwake", Strings.BalloonOn, ToolTipIcon.None);
+            tray.ShowBalloonTip(3000, "LidAwake", Strings.BalloonOn, ToolTipIcon.None);
         }
 
         bool Activate()
@@ -124,8 +146,13 @@ namespace LidAwake
             App.Log("Turning off: " + why);
             foreach (string id in new List<string>(holds.Keys)) Remove(id, "turning off");
             manual = false;
+            until = null;
+            timerChoice = 0;
+            onHotspot = false;
+            lastHotspotTry = DateTime.MinValue;
             active = false;
             bool lidClosed = keeper.LidClosed;
+            guard.Stop("LidAwake turned off");
             try { keeper.Release(); }
             catch (Exception ex) { App.Log("Release failed: " + ex); }
             Refresh();
@@ -150,6 +177,8 @@ namespace LidAwake
             if (exiting) return;
             exiting = true;
             timer.Stop();
+            recheck.Stop();
+            guard.Dispose();
             tray.Visible = false;
             tray.Dispose();
             window.Dispose();
@@ -165,7 +194,6 @@ namespace LidAwake
             try { PhoneHotspot.Enabled = !PhoneHotspot.Enabled; }
             catch (Exception ex) { App.Log("Hotspot setting change failed: " + ex.Message); }
             Refresh();
-            if (Enabled() && active && manual) StartHotspot();
         }
 
         // Runs the Wi-Fi list clicking on a worker thread and reports back on the UI thread.
@@ -174,6 +202,7 @@ namespace LidAwake
             if (hotspotBusy || exiting) return;
             hotspotBusy = true;
             lastHotspotTry = DateTime.UtcNow;
+            guard.Pause(true);
             var worker = new Thread(delegate()
             {
                 string phone = null, error;
@@ -183,7 +212,9 @@ namespace LidAwake
                 {
                     hotspotBusy = false;
                     lastHotspotTry = DateTime.UtcNow;
+                    onHotspot = error == null;
                     if (exiting) return;
+                    guard.Pause(false);
                     if (error == null)
                         tray.ShowBalloonTip(4000, "LidAwake", string.Format(Strings.HotspotOk, phone), ToolTipIcon.None);
                     else
@@ -195,6 +226,62 @@ namespace LidAwake
             });
             worker.IsBackground = true;
             worker.Start();
+        }
+
+        // Each click: one hour, two hours, until 8:00, no limit. Picking a time also turns LidAwake on.
+        void CycleTimer()
+        {
+            timerChoice = (timerChoice + 1) % 4;
+            SetTimer(timerChoice == 1 ? 60 : timerChoice == 2 ? 120 : timerChoice == 3 ? Prefs.MinutesUntil(8, 0) : 0);
+        }
+
+        // minutes <= 0: no time limit (stays on until turned off).
+        void SetTimer(int minutes)
+        {
+            if (minutes <= 0)
+            {
+                if (until.HasValue) App.Log("Timer cleared.");
+                until = null;
+                timerChoice = 0;
+                Refresh();
+                return;
+            }
+            until = DateTime.UtcNow.AddMinutes(minutes);
+            App.Log("Timer: on until " + until.Value.ToLocalTime().ToString("HH:mm") + ".");
+            if (!active || !manual) TurnOnManually();
+            Refresh();
+        }
+
+        void CycleBattery()
+        {
+            int now = Prefs.HibernateAt, next = Prefs.BatteryChoices[0];
+            foreach (int c in Prefs.BatteryChoices) if (c > now) { next = c; break; }
+            SetBattery(next);
+        }
+
+        void SetBattery(int percent)
+        {
+            try { Prefs.HibernateAt = percent; App.Log("Hibernate at " + Prefs.HibernateAt + "% battery (lid closed)."); }
+            catch (Exception ex) { App.Log("Battery setting change failed: " + ex.Message); }
+            Refresh();
+        }
+
+        void SetNotify(bool on)
+        {
+            try { Prefs.NotifyDone = on; }
+            catch (Exception ex) { App.Log("Notify setting change failed: " + ex.Message); }
+            Refresh();
+        }
+
+        void SetHotspot(bool on)
+        {
+            if (Enabled() != on) ToggleHotspot();
+        }
+
+        void Notify(string text)
+        {
+            App.Log("Notify: " + text);
+            if (!exiting && Prefs.NotifyDone) tray.ShowBalloonTip(6000, "LidAwake", text, ToolTipIcon.None);
         }
 
         void ToggleAutostart()
@@ -228,6 +315,10 @@ namespace LidAwake
             holds.Remove(id);
             lastRelease = DateTime.UtcNow;
             App.Log("Release: " + id + " (" + why + ")");
+            // Claude finished a long job (short replies don't count) and nothing else is running
+            TimeSpan took = lastRelease - h.Started;
+            if (why == "job done" && holds.Count == 0 && id.IndexOf('/') < 0 && took >= TimeSpan.FromMinutes(2))
+                Notify(string.Format(Strings.ClaudeDone, (int)Math.Round(took.TotalMinutes)));
         }
 
         // Messages from "LidAwake start/stop/off/..." run from the command line or a Claude Code hook.
@@ -257,6 +348,18 @@ namespace LidAwake
                     return "ok";
                 case "status":
                     return Describe();
+                case "timer":
+                    ui.Post(delegate { SetTimer(ParseNumber(id)); }, null);
+                    return "ok";
+                case "battery":
+                    ui.Post(delegate { SetBattery(ParseNumber(id)); }, null);
+                    return "ok";
+                case "notify":
+                    ui.Post(delegate { SetNotify(id == "on"); }, null);
+                    return "ok";
+                case "hotspot":
+                    ui.Post(delegate { SetHotspot(id == "on"); }, null);
+                    return "ok";
                 default:
                     return "unknown command";
             }
@@ -264,9 +367,17 @@ namespace LidAwake
             return "ok";
         }
 
+        static int ParseNumber(string s)
+        {
+            int n;
+            return int.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out n) ? n : 0;
+        }
+
         void Evaluate()
         {
-            if (exiting || !active) return;
+            if (exiting) return;
+            keeper.WatchPowerMode();
+            if (!active) return;
             DateTime now = DateTime.UtcNow;
             foreach (var pair in new List<KeyValuePair<string, Hold>>(holds))
             {
@@ -279,17 +390,46 @@ namespace LidAwake
 
             // Battery almost empty with the lid shut: hibernate so nothing is lost. The job is paused, not
             // ended; it carries on when the laptop is opened again.
+            guard.Check();
+            if (until.HasValue && now >= until.Value)
+            {
+                App.Log("Timer done.");
+                until = null;
+                timerChoice = 0;
+                if (manual) { manual = false; lastRelease = now; }
+                Notify(Strings.TimerDone);
+            }
+
             int battery = PowerPlan.BatteryPercentOnBattery();
-            if (keeper.LidClosed && battery >= 0 && battery <= LowBattery && now - lastLowBattery > TimeSpan.FromMinutes(3))
+            if (keeper.LidClosed && battery >= 0 && battery <= Prefs.HibernateAt && now - lastLowBattery > TimeSpan.FromMinutes(3))
             {
                 lastLowBattery = now;
                 Keeper.Hibernate("battery at " + battery + "% with the lid closed");
                 return;
             }
 
-            // turned on by hand with "Phone hotspot" ticked: stay online through the phone
-            if (manual && !hotspotBusy && now - lastHotspotTry > TimeSpan.FromMinutes(2) && Enabled() && !PhoneHotspot.Online())
-                StartHotspot();
+            // "Phone hotspot" ticked: as soon as the lid closes, go online through the phone, even from Wi-Fi.
+            // Until it works, try once a minute; after that only if the internet drops for 10 s.
+            if (!hotspotBusy)
+            {
+                if (keeper.LidClosed && Enabled())
+                {
+                    bool due = now - lastHotspotTry > TimeSpan.FromMinutes(1);
+                    if (!onHotspot) { if (due) StartHotspot(); }
+                    else if (!PhoneHotspot.Online())
+                    {
+                        if (!offlineSince.HasValue) offlineSince = now;
+                        if (now - offlineSince.Value >= TimeSpan.FromSeconds(10) && due) StartHotspot();
+                    }
+                    else offlineSince = null;
+                }
+                else
+                {
+                    onHotspot = false;
+                    offlineSince = null;
+                    lastHotspotTry = DateTime.MinValue;   // the next lid close connects right away
+                }
+            }
 
             if (!manual && holds.Count == 0 && now - lastRelease >= Linger)
                 Deactivate("all jobs done", true);
@@ -299,13 +439,15 @@ namespace LidAwake
 
         string Describe()
         {
-            if (!active) return "running in the tray, off";
+            string prefs = "\nSettings: hibernate at " + Prefs.HibernateAt + "% battery with the lid closed; notify when done "
+                + (Prefs.NotifyDone ? "on" : "off") + "; phone hotspot " + (Enabled() ? "on" : "off");
+            if (!active) return "running in the tray, off" + prefs;
             var parts = new List<string>();
-            if (manual) parts.Add("manual");
+            if (manual) parts.Add(until.HasValue ? "manual, timer until " + until.Value.ToLocalTime().ToString("HH:mm") : "manual");
             foreach (string k in holds.Keys) parts.Add(k);
             string who = parts.Count == 0 ? "nothing (turning off soon)" : string.Join(", ", parts.ToArray());
             return "on; held by: " + who + "; lid " + (keeper.LidClosed ? "closed" : "open")
-                + (keeper.Problem != null ? "; problem: " + keeper.Problem : "");
+                + (keeper.Problem != null ? "; problem: " + keeper.Problem : "") + prefs;
         }
 
         void Refresh()
@@ -316,6 +458,7 @@ namespace LidAwake
 
             string s;
             if (!active) s = Strings.StatusOff;
+            else if (manual && until.HasValue) s = string.Format(Strings.StatusUntil, until.Value.ToLocalTime().ToString("HH:mm"));
             else if (manual) s = Strings.StatusManual;
             else if (holds.Count > 0) s = string.Format(Strings.StatusJobs, holds.Count);
             else s = Strings.StatusEnding;
@@ -324,12 +467,18 @@ namespace LidAwake
             toggleItem.Text = active ? Strings.MenuTurnOff : Strings.MenuTurnOn;
             var t = (RowInfo)toggleItem.Tag;
             t.Glyph = active ? Glyph.Stop : Glyph.Play;
-            t.Hint = active ? Strings.MenuTurnOffHint : Strings.MenuTurnOnHint;
             bool auto = false;
             try { auto = App.Autostart; } catch { }
             ((RowInfo)autostartItem.Tag).Checked = auto;
             ((RowInfo)hotspotItem.Tag).Checked = Enabled();
             hotspotItem.Invalidate();
+            ((RowInfo)timerItem.Tag).Hint = until.HasValue
+                ? string.Format(Strings.TimerUntil, until.Value.ToLocalTime().ToString("HH:mm")) : Strings.TimerOff;
+            timerItem.Invalidate();
+            ((RowInfo)batteryItem.Tag).Hint = Prefs.HibernateAt + "%";
+            batteryItem.Invalidate();
+            ((RowInfo)notifyItem.Tag).Checked = Prefs.NotifyDone;
+            notifyItem.Invalidate();
             toggleItem.Invalidate();
             autostartItem.Invalidate();
         }
@@ -350,6 +499,7 @@ namespace LidAwake
         public event CommandHandler Command;
         public event Action<bool> LidChanged;
         public event Action SessionEnding;
+        public event Action<bool> LockChanged;   // true = locked
 
         IntPtr lidNotification = IntPtr.Zero;
 
@@ -358,6 +508,7 @@ namespace LidAwake
             var cp = new CreateParams();
             cp.Caption = App.IpcWindowTitle;
             CreateHandle(cp);
+            Native.WTSRegisterSessionNotification(Handle, 0 /* this session */);
         }
 
         public void ListenForLid()
@@ -387,6 +538,12 @@ namespace LidAwake
                     }
                     m.Result = new IntPtr(1);
                     return;
+
+                case Native.WM_WTSSESSION_CHANGE:
+                    int change = m.WParam.ToInt32();
+                    if ((change == Native.WTS_SESSION_LOCK || change == Native.WTS_SESSION_UNLOCK) && LockChanged != null)
+                        LockChanged(change == Native.WTS_SESSION_LOCK);
+                    break;
 
                 case Native.WM_QUERYENDSESSION:
                     m.Result = new IntPtr(1);
@@ -432,7 +589,11 @@ namespace LidAwake
                 Native.UnregisterPowerSettingNotification(lidNotification);
                 lidNotification = IntPtr.Zero;
             }
-            if (Handle != IntPtr.Zero) DestroyHandle();
+            if (Handle != IntPtr.Zero)
+            {
+                Native.WTSUnRegisterSessionNotification(Handle);
+                DestroyHandle();
+            }
         }
     }
 }

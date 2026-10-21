@@ -123,6 +123,7 @@ namespace LidAwake
         {
             QuitRunning();
             Snapshot.RecoverLeftovers();   // settings back first, before the restore file goes away
+            PowerMode.Restore();           // only possible on battery
             using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
                 if (k.GetValue("LidAwake") != null) k.DeleteValue("LidAwake");
             try { Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false); } catch { }
@@ -330,22 +331,44 @@ namespace LidAwake
 @"# LidAwake — keeps this laptop working with the lid closed
 
 The user's tool (https://github.com/Mqr1oo/LidAwake), installed at
-`%LOCALAPPDATA%\Programs\LidAwake\LidAwake.exe`. It lives in the tray as a coffee cup: grey = off, coral = on.
+`%LOCALAPPDATA%\Programs\LidAwake\LidAwake.exe` (call it by that full path). It lives in the tray as a coffee
+cup: grey = off, coral = on.
 
-- **It runs by itself.** Hooks in `~/.claude/settings.json` (`LidAwake.exe hook`) turn it on when a turn starts.
-  It stays on while background tasks run and turns off 60 s after everything is done. Normal work needs nothing
-  from you.
-- **While it is on:** the lid action is ""Do nothing"" and idle sleep is ""Never"". When the lid is closed on
-  battery, Energy Saver turns on. It puts the user's settings back afterwards.
-- **When work ends with the lid closed:** the laptop hibernates (powers off with everything saved). It also
-  hibernates at 10% battery with the lid closed; the work resumes when the lid is opened.
-- **Never change sleep or lid settings yourself** (powercfg, Control Panel) to keep the machine awake.
-  LidAwake does it and restores them.
-- **Commands, only when needed** (e.g. a detached process you start that must outlive your turn):
-  `LidAwake.exe start <name>` before it and `LidAwake.exe stop <name>` when it is done.
-  - `LidAwake.exe status` shows the state.
-  - `LidAwake.exe restore` puts the settings back if something looks off.
-  - The log is at `%LOCALAPPDATA%\LidAwake\lidawake.log`.
+## What it does by itself
+
+- **Hooks** in `~/.claude/settings.json` (`LidAwake.exe hook`) turn it on when a prompt is sent. It stays on
+  while background tasks run and turns off 60 s after everything is done. Normal work needs nothing from you.
+- **While it is on:** the lid action is ""Do nothing"" and idle sleep is ""Never"". With the lid closed on
+  battery, the power mode is ""Best power efficiency"". The user's settings come back afterwards, even after a crash.
+- **Screen:** on Modern Standby laptops a screen that turns off by itself puts the laptop into standby and stops
+  the work. So at that moment LidAwake shows a black screen instead (safe for OLED); any key or mouse move
+  brings the desktop back. Locking the PC (Win+L) still pauses the work after ~30 s: tell the user to close
+  the lid instead of locking.
+- **When work ends with the lid closed,** the laptop hibernates (powers off, everything saved). It also hibernates
+  when the battery reaches the threshold (default 10%) with the lid closed; the work resumes when it is opened.
+- **Notifications** (on by default): ""Claude is done"" after jobs longer than 2 minutes, and when a timer ends.
+- If another app (e.g. G-Helper on ASUS laptops) resets the lid setting, LidAwake sets it again within a second.
+
+## Controlling it
+
+Run these when the user asks for it or the task needs it. Each prints what it did.
+
+| The user wants | Command |
+|---|---|
+| keep the laptop awake for a while / overnight | `LidAwake.exe for 2h` (or `90m`, `1.5h`), `LidAwake.exe until 8:00`; `for off` clears the timer |
+| turn it on now / off now | `LidAwake.exe on` / `LidAwake.exe off` (off with the lid closed hibernates the laptop) |
+| hibernate at another battery level | `LidAwake.exe battery 15` (3-50) |
+| notifications on or off | `LidAwake.exe notify on` / `off` |
+| the laptop on the phone's hotspot whenever LidAwake is on and the lid is closed (even from Wi-Fi) | `LidAwake.exe hotspot on` / `off` (needs Instant hotspot set up in Phone Link first) |
+| a detached process of yours must outlive your turn | `LidAwake.exe start <name>` before it, `LidAwake.exe stop <name>` when it is done |
+| see the state and all settings | `LidAwake.exe status` |
+| something looks wrong | `LidAwake.exe restore` (puts the power settings back), log at `%LOCALAPPDATA%\LidAwake\lidawake.log` |
+
+## Rules
+
+- **Never change sleep, lid, screen or power-mode settings yourself** (powercfg, Control Panel, registry) to keep
+  the machine awake. Use the commands above; LidAwake restores everything.
+- The user can close the lid while you work; you don't need to ask them to keep it open.
 - Cloud sessions don't run these hooks; this works only for sessions running on this laptop.
 ";
     }

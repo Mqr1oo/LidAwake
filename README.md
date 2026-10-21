@@ -12,7 +12,8 @@ because Windows keep-awake requests only block *idle* sleep, not the lid. LidAwa
 for as long as the job runs.
 
 - **Lives in the tray.** Click the coffee cup to turn it on (coral) or off (grey). While off it changes nothing
-  and uses no CPU. Right-click for the menu, which includes *Start with Windows* (on by default after `install`).
+  and uses no CPU. Right-click for the menu: *Timer* (1 h, 2 h or until 8:00), *Hibernate at* (battery level),
+  *Phone hotspot*, *Notify when done* and *Start with Windows* (on by default).
 - **No admin and no network.** One small exe (about 150 KB) that uses the .NET Framework built into Windows.
   No service and no scheduled task.
 
@@ -22,9 +23,9 @@ for as long as the job runs.
 |---|---|---|
 | Lid close action (plugged in and on battery) | *Do nothing*: the screen turns off and the PC keeps working | your setting again |
 | *Put the computer to sleep after…* and the lock-screen sleep timeout | *Never* (on Modern Standby laptops a keep-awake request alone stops working ~5 min after this timer runs out) | your setting again |
-| Turning off the display | unchanged, so the screen still turns off | unchanged |
-| Lid closed while on battery | Energy Saver turned on | your setting again |
-| Battery drops to 10% with the lid closed | hibernates so nothing is lost; the job carries on when you open it | |
+| Screen | turns off as usual. On Modern Standby laptops a screen that turns off puts the whole laptop into standby and the job stops, so there it turns **black** at that moment instead (on OLED, black pixels are off, so nothing burns in). Any key or mouse move brings it back. If a video keeps the screen on, nothing changes | as before |
+| Lid closed while on battery | power mode *Best power efficiency* (Settings → System → Power) | your mode again, the next time the laptop is on battery |
+| Battery drops to your threshold (10% by default) with the lid closed | hibernates so nothing is lost; the job carries on when you open it | |
 | Job ends while the lid is closed | | hibernates (everything saved, laptop off) |
 
 Your original values are saved to `%LOCALAPPDATA%\LidAwake\restore.txt` **before** anything changes. If
@@ -39,18 +40,28 @@ it**. That's all:
   tray and starts with Windows;
 - if Claude Code is installed, it asks once: *Connect LidAwake to Claude Code?* Click **Yes** and it adds the
   hooks below to `%USERPROFILE%\.claude\settings.json`, keeping everything else and saving a backup first. It
-  also adds a short note to `%USERPROFILE%\.claude\CLAUDE.md` so Claude knows the tool exists.
+  also adds a note to `%USERPROFILE%\.claude\CLAUDE.md` that tells Claude what LidAwake does and which commands
+  control it, so you can just ask Claude ("keep the laptop awake until 8", "hibernate at 20%").
 
 Downloading a newer version and double-clicking it updates in place. `LidAwake connect` / `LidAwake disconnect`
 add or remove the Claude Code part later.
 
+## Timer and notifications
+
+- **Timer.** In the menu, *Timer* changes on each click: 1 hour, 2 hours, until 8:00, off.
+  It turns LidAwake on, and when the time is up LidAwake turns off (and hibernates if the lid is closed), unless
+  Claude is still working. From a terminal: `LidAwake for 2h`, `LidAwake until 8:00`.
+- **Hibernate threshold.** *Hibernate at* changes on each click (5 to 30%), or `LidAwake battery 15`.
+- **Notify when done** (on by default): a notification when Claude finishes a job that took longer than
+  2 minutes, and when a timer ends. `LidAwake notify off` turns it off.
+
 ## Phone hotspot (optional)
 
-Tick **Phone hotspot** in the tray menu. Now, when you turn LidAwake on yourself, it also turns on your phone's
-hotspot and connects the laptop to it, so the work stays online once you leave your Wi-Fi with the laptop in
-a bag. It opens the Wi-Fi list for a moment, presses **Connect** on your phone, then checks that the laptop is
-really online and tells you either way. If the internet drops while LidAwake is on, it tries again every
-2 minutes.
+Tick **Phone hotspot** in the tray menu. Now, as soon as you close the lid while LidAwake is on, it turns on your
+phone's hotspot and connects the laptop to it, even if it was on Wi-Fi. So when you leave with the laptop in a
+bag, the work stays online without a gap. It opens the Wi-Fi list for a moment, presses **Connect** on your
+phone, then checks that the laptop is really online. If that fails it tries again every minute; once connected,
+it only tries again if the internet drops. It uses your mobile data while the lid is closed.
 
 **One-time setup first.** Without it the option can't work:
 
@@ -113,6 +124,10 @@ LidAwake install      install (= double-click)      LidAwake uninstall
 LidAwake connect      add the Claude Code hooks     LidAwake disconnect  remove them
 LidAwake on           turn on                       LidAwake quit        leave the tray
 LidAwake hooks        print the hooks JSON
+LidAwake for 2h       on now, off after 2h (90m, 1.5h; "for off" clears it)
+LidAwake until 8:00   on now, off at 8:00
+LidAwake battery 15   hibernate at 15% with the lid closed (3-50)
+LidAwake notify on|off    LidAwake hotspot on|off
 ```
 
 The log is at `%LOCALAPPDATA%\LidAwake\lidawake.log`.
@@ -131,15 +146,19 @@ try it without writing any power setting.
 ## Limits
 
 - Desktop PCs have no lid. On those it only blocks idle sleep.
+- If you lock the PC (Win+L), Windows turns the screen off after its lock-screen timeout and a Modern Standby
+  laptop pauses the job. Close the lid instead of locking.
 - If your organisation locks power settings, LidAwake shows a warning in the tray menu.
-- A laptop working with the lid shut in a bag gets warm. Energy Saver helps, but don't seal it in a sleeve for hours.
+- Some vendor tools (for example G-Helper on ASUS laptops) put the lid setting back when the lid opens. LidAwake
+  notices within a second and sets it again while it is on.
+- A laptop working with the lid shut in a bag gets warm. The efficient power mode helps, but don't seal it in a sleeve for hours.
 
 ---
 
 ### Pe scurt (română)
 
 LidAwake ține laptopul pornit cu capacul închis cât timp lucrează Claude (sau cât îl pornești tu). Ecranul se
-stinge, iar pe baterie intră în Energy Saver. Când treaba e gata, inclusiv taskurile din fundal, pune setările
+stinge (sau devine negru), iar pe baterie trece pe modul de putere cel mai economic. Când treaba e gata, inclusiv taskurile din fundal, pune setările
 înapoi exact cum erau. Dacă capacul e încă închis, laptopul intră în hibernate: se oprește cu tot salvat. Tot
 așa face dacă bateria ajunge la 10% cu capacul închis. Nu rulează în fundal, nu cere
 admin și nu folosește internetul. Pornești din Start → **LidAwake** și oprești din iconița cu cana de cafea din tray.

@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Keeps a Windows laptop working with the lid closed while a job runs")]
 [assembly: AssemblyProduct("LidAwake")]
 [assembly: AssemblyCopyright("MIT License")]
-[assembly: AssemblyVersion("1.3.0.0")]
-[assembly: AssemblyFileVersion("1.3.0.0")]
+[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyFileVersion("1.4.0.0")]
 
 namespace LidAwake
 {
@@ -45,6 +45,11 @@ namespace LidAwake
                     case "stop": Ipc.Send("stop", arg1 ?? "cli", 0); return 0;
                     case "off": Ipc.Send("off", "", 0); return 0;
                     case "status": return Status();
+                    case "for": return For(arg1);
+                    case "until": return Until(arg1);
+                    case "battery": return Battery(arg1);
+                    case "notify": return OnOff("notify", arg1, "Notify when done:");
+                    case "hotspot": return OnOff("hotspot", arg1, "Phone hotspot (while on with the lid closed):");
                     case "restore": return Restore();
                     case "install": return Installer.Install(false, arg1 == "--connect");
                     case "uninstall": return Installer.Uninstall(arg1 == "--gui");
@@ -71,13 +76,18 @@ namespace LidAwake
             foreach (bool on in new[] { true, false })
             {
                 MenuHeader header;
-                var toggle = TrayMenu.Row(on ? Strings.MenuTurnOff : Strings.MenuTurnOn, on ? Glyph.Stop : Glyph.Play,
-                    on ? Strings.MenuTurnOffHint : Strings.MenuTurnOnHint, null);
+                var toggle = TrayMenu.Row(on ? Strings.MenuTurnOff : Strings.MenuTurnOn, on ? Glyph.Stop : Glyph.Play, null, null);
+                var timer = TrayMenu.Row(Strings.MenuTimer, Glyph.None, on ? string.Format(Strings.TimerUntil, "08:00") : Strings.TimerOff, null);
+                var battery = TrayMenu.Row(Strings.MenuBattery, Glyph.None, "10%", null);
+                var hotspot = TrayMenu.Row(Strings.MenuHotspot, Glyph.Check, null, null);
+                var notify = TrayMenu.Row(Strings.MenuNotify, Glyph.Check, null, null);
+                ((RowInfo)notify.Tag).Checked = true;
                 var auto = TrayMenu.Row(Strings.MenuAutostart, Glyph.Check, null, null);
                 ((RowInfo)auto.Tag).Checked = true;
-                var quit = TrayMenu.Row(Strings.MenuQuit, Glyph.None, Strings.MenuQuitHint, null);
-                ContextMenuStrip menu = TrayMenu.Build(App.FullIcon(), out header, toggle, auto, quit);
-                header.Set(on, on ? Strings.StatusManual : Strings.StatusOff, null);
+                var quit = TrayMenu.Row(Strings.MenuQuit, Glyph.None, null, null);
+                ContextMenuStrip menu = TrayMenu.Build(App.FullIcon(), out header, toggle, timer, new ToolStripSeparator(),
+                    battery, hotspot, notify, auto, new ToolStripSeparator(), quit);
+                header.Set(on, on ? string.Format(Strings.StatusUntil, "08:00") : Strings.StatusOff, null);
                 menu.Show(new Point(-4000, -4000));
                 Application.DoEvents();
                 var bmp = new Bitmap(menu.Width, menu.Height);
@@ -195,6 +205,77 @@ namespace LidAwake
             Ipc.WaitForInstance(5000);
         }
 
+        // "LidAwake for 2h" / "90m" / "1.5h" / "off": on now, off again after that long.
+        static int For(string arg)
+        {
+            string a = (arg ?? "").Trim().ToLowerInvariant();
+            int minutes = 0;
+            if (a != "off" && a != "0")
+            {
+                double n;
+                bool hours = a.EndsWith("h");
+                if (!double.TryParse(a.TrimEnd('h', 'm'), NumberStyles.Float, CultureInfo.InvariantCulture, out n) || n <= 0 || n > 7 * 24 * 60)
+                {
+                    Cli.Out("Usage: LidAwake for 2h | 90m | 1.5h | off");
+                    return 2;
+                }
+                minutes = (int)Math.Ceiling(hours ? n * 60 : n);
+            }
+            return ToTray("timer", minutes.ToString(CultureInfo.InvariantCulture),
+                minutes == 0 ? "Timer off (LidAwake stays as it is)." : "On until " + DateTime.Now.AddMinutes(minutes).ToString("HH:mm") + ", then off.");
+        }
+
+        // "LidAwake until 8:00" / "until 23": on now, off at that time (today or tomorrow).
+        static int Until(string arg)
+        {
+            string[] p = (arg ?? "").Split(':');
+            int h = p.Length > 0 ? ParseIntOr(p[0], -1) : -1, m = p.Length > 1 ? ParseIntOr(p[1], -1) : 0;
+            if (h < 0 || h > 23 || m < 0 || m > 59) { Cli.Out("Usage: LidAwake until 8:00"); return 2; }
+            int minutes = Prefs.MinutesUntil(h, m);
+            return ToTray("timer", minutes.ToString(CultureInfo.InvariantCulture),
+                "On until " + DateTime.Now.AddMinutes(minutes).ToString("HH:mm") + ", then off.");
+        }
+
+        static int Battery(string arg)
+        {
+            int n = ParseIntOr(arg, -1);
+            if (n < Prefs.MinBattery || n > Prefs.MaxBattery)
+            {
+                Cli.Out("Usage: LidAwake battery <" + Prefs.MinBattery + "-" + Prefs.MaxBattery + ">   (now " + Prefs.HibernateAt + ")");
+                return 2;
+            }
+            return ToTray("battery", n.ToString(CultureInfo.InvariantCulture), "Hibernates at " + n + "% battery with the lid closed.");
+        }
+
+        static int OnOff(string cmd, string arg, string what)
+        {
+            if (arg != "on" && arg != "off") { Cli.Out("Usage: LidAwake " + cmd + " on|off"); return 2; }
+            return ToTray(cmd, arg, what + " " + arg + ".");
+        }
+
+        static int ParseIntOr(string s, int fallback)
+        {
+            int n;
+            return int.TryParse((s ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ? n : fallback;
+        }
+
+        // Timers and settings live in the tray instance (it writes the real HKCU even when this command runs
+        // inside an app container), so start it first if it isn't running.
+        static int ToTray(string cmd, string arg, string done)
+        {
+            if (!Ipc.Send(cmd, arg, 0))
+            {
+                var psi = new ProcessStartInfo(App.ExePath, "tray");
+                psi.UseShellExecute = true;
+                psi.WorkingDirectory = App.ExeDir;
+                Process.Start(psi);
+                Ipc.WaitForInstance(5000);
+                if (!Ipc.Send(cmd, arg, 0)) { Cli.Out("LidAwake is not running and could not be started."); return 1; }
+            }
+            Cli.Out(done);
+            return 0;
+        }
+
         static int Status()
         {
             var sb = new StringBuilder();
@@ -205,9 +286,10 @@ namespace LidAwake
                 Guid scheme = PowerPlan.ActiveScheme();
                 sb.AppendLine("Lid close action now: plugged in = " + PowerPlan.LidName(PowerPlan.Read(scheme, PowerPlan.LidAc))
                     + ", on battery = " + PowerPlan.LidName(PowerPlan.Read(scheme, PowerPlan.LidDc)));
-                uint? t = PowerPlan.Read(scheme, PowerPlan.SaverDc);
-                sb.AppendLine("Energy saver: " + (PowerPlan.EnergySaverOn() ? "on" : "off")
-                    + " (turns on at " + (t.HasValue ? t.Value + "%" : "n/a") + " battery)");
+                Guid mode;
+                if (Native.PowerGetActualOverlayScheme(out mode) == 0)
+                    sb.AppendLine("Power mode now: " + (mode == new Guid("961cc777-2547-4f9d-8174-7d86181b8a7a") ? "best power efficiency" : mode.ToString())
+                        + (PowerPlan.EnergySaverOn() ? ", energy saver on" : ""));
             }
             catch (Exception ex) { sb.AppendLine("Could not read power settings: " + ex.Message); }
             if (Snapshot.Exists) sb.AppendLine("Saved original settings: " + Path.Combine(App.DataDir, "restore.txt"));
@@ -223,6 +305,7 @@ namespace LidAwake
                 Cli.Out("Asked the running LidAwake to stop and restore your settings.");
                 return 0;
             }
+            PowerMode.Restore();
             if (!Snapshot.Exists) { Cli.Out("Nothing to restore - your settings are untouched."); return 0; }
             bool ok = Snapshot.RecoverLeftovers();
             Cli.Out(ok ? "Your original power settings are back." : "Some settings could not be restored, see " + App.LogPath);
@@ -478,19 +561,15 @@ namespace LidAwake
         public static readonly string TrayTipOff = Ro ? "LidAwake: oprit - click ca să-l pornești" : "LidAwake: off - click to turn on";
         public static readonly string BadgeOn = Ro ? "PORNIT" : "ON";
         public static readonly string BadgeOff = Ro ? "OPRIT" : "OFF";
-        public static readonly string MenuInfo = Ro ? "Capac închis = ecran stins, PC-ul lucrează" : "Lid closed = screen off, the PC keeps working";
-        public static readonly string InfoOff = Ro ? "Click ca să lucreze cu capacul închis" : "Click to keep working with the lid closed";
         public static readonly string MenuTurnOn = Ro ? "Pornește" : "Turn on";
-        public static readonly string MenuTurnOnHint = Ro ? "capacul închis nu-l adoarme" : "lid closed keeps working";
         public static readonly string MenuTurnOff = Ro ? "Oprește" : "Turn off";
-        public static readonly string MenuTurnOffHint = Ro ? "somn normal din nou" : "normal sleep again";
         public static readonly string MenuAutostart = Ro ? "Pornește cu Windows" : "Start with Windows";
         public static readonly string MenuQuit = Ro ? "Ieșire" : "Quit";
-        public static readonly string MenuQuitHint = Ro ? "scoate iconița din tray" : "remove from the tray";
-        public static readonly string StatusManual = Ro ? "Pornit de tine - până apeși Oprește" : "Started by you - on until you turn it off";
+        public static readonly string StatusManual = Ro ? "Pornit de tine" : "Turned on by you";
+        public static readonly string StatusUntil = Ro ? "Pornit până la {0}" : "On until {0}";
         public static readonly string StatusJobs = Ro ? "Lucrează pentru {0} job(uri) Claude" : "Working for {0} Claude job(s)";
         public static readonly string StatusEnding = Ro ? "Gata - se oprește în câteva secunde" : "Done - turning off in a moment";
-        public static readonly string StatusOff = Ro ? "Setările tale de energie sunt neatinse" : "Your power settings are untouched";
+        public static readonly string StatusOff = Ro ? "Click pe cană ca să-l pornești" : "Click the cup to turn it on";
         public static readonly string BalloonOn = Ro ? "Poți închide capacul: ecranul se stinge, treaba continuă." : "You can close the lid: the screen turns off, the work keeps going.";
         public static readonly string AskConnect = Ro
             ? "Conectez LidAwake la Claude Code?\n\nAșa pornește singur cât lucrează Claude și se oprește când Claude a terminat tot (inclusiv taskurile din fundal).\n\nSe adaugă 4 hook-uri în .claude\\settings.json (se face o copie de siguranță) și o scurtă notă în .claude\\CLAUDE.md, ca să știe Claude de el."
@@ -498,9 +577,15 @@ namespace LidAwake
         public static readonly string Welcome = Ro
             ? "LidAwake e în tray (cana de cafea). Click pe ea ca să-l pornești; Claude îl pornește singur."
             : "LidAwake is in the tray (the coffee cup). Click it to turn it on; Claude turns it on by itself.";
+        public static readonly string MenuTimer = Ro ? "Timer" : "Timer";
+        public static readonly string TimerOff = Ro ? "oprit" : "off";
+        public static readonly string TimerUntil = Ro ? "până la {0}" : "until {0}";
+        public static readonly string MenuBattery = Ro ? "Hibernează la" : "Hibernate at";
+        public static readonly string MenuNotify = Ro ? "Notificare la final" : "Notify when done";
+        public static readonly string ClaudeDone = Ro ? "Claude a terminat (a lucrat {0} min)." : "Claude is done (worked {0} min).";
+        public static readonly string TimerDone = Ro ? "Timer-ul s-a terminat. LidAwake se oprește dacă nu mai lucrează nimic." : "The timer is over. LidAwake turns off unless something is still working.";
         public static readonly string MenuHotspot = Ro ? "Hotspot de pe telefon" : "Phone hotspot";
-        public static readonly string MenuHotspotHint = Ro ? "când îl pornești tu" : "when you turn it on";
-        public static readonly string HotspotOk = Ro ? "Conectat la hotspotul lui {0}. Poți închide capacul." : "Connected to {0}'s hotspot. You can close the lid.";
+        public static readonly string HotspotOk = Ro ? "Online prin hotspotul lui {0}." : "Online through {0}'s hotspot.";
         public static readonly string HotspotFail = Ro ? "Nu m-am putut conecta la hotspotul telefonului: {0}" : "Couldn't connect to the phone hotspot: {0}";
         public static readonly string Removed = Ro
             ? "LidAwake a fost dezinstalat.\n\nSetările tale de energie sunt exact cum erau, iar hook-urile și nota din Claude Code au fost scoase."
@@ -518,6 +603,12 @@ namespace LidAwake
   LidAwake install    install (also on double-click) LidAwake uninstall
   LidAwake connect    add the Claude Code hooks     LidAwake disconnect remove them
   LidAwake hooks      print the Claude Code hooks JSON
-  LidAwake quit       turn off and leave the tray";
+  LidAwake quit       turn off and leave the tray
+
+  LidAwake for 2h     on now, off after 2h (also 90m, 1.5h; ""for off"" clears the timer)
+  LidAwake until 8:00 on now, off at 8:00
+  LidAwake battery 15 hibernate at 15% battery when the lid is closed (3-50, default 10)
+  LidAwake notify on|off   balloon when Claude finishes a long job or a timer ends
+  LidAwake hotspot on|off  connect to the phone's hotspot while on with the lid closed";
     }
 }

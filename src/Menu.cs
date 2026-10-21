@@ -73,7 +73,7 @@ namespace LidAwake
         }
     }
 
-    // Top of the menu: icon, name, an ON/OFF badge and two lines of status.
+    // Top of the menu: icon, name, an ON/OFF badge and one line of status.
     sealed class MenuHeader : Control
     {
         readonly Icon icon;
@@ -99,7 +99,7 @@ namespace LidAwake
 
         void FitSize()
         {
-            Size = new Size(Theme.S(310), Theme.S(problem == null ? 84 : 104));
+            Size = new Size(Theme.S(310), Theme.S(problem == null ? 64 : 84));
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -131,9 +131,6 @@ namespace LidAwake
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
             y += titleSize.Height + Theme.S(6);
-            TextRenderer.DrawText(g, on ? Strings.MenuInfo : Strings.InfoOff, Theme.Body, new Point(x, y), Theme.Muted, TextFormatFlags.NoPadding);
-
-            y += Theme.S(19);
             int dot = Theme.S(7);
             using (var b = new SolidBrush(on ? Theme.Green : Theme.Muted))
                 g.FillEllipse(b, x, y + Theme.S(5), dot, dot);
@@ -154,7 +151,7 @@ namespace LidAwake
     {
         public Glyph Glyph;
         public bool Checked;
-        public string Hint;
+        public string Hint;   // a short value shown on the right ("off", "15%")
     }
 
     // Draws the menu: flat background, thin border, rounded hover, small accent glyphs.

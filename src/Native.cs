@@ -41,8 +41,23 @@ namespace LidAwake
 
         // ---- power requests (keep the system out of idle sleep) ----------------------------
 
+        // Power mode (Settings > System > Power > Power mode). Not in the SDK headers, but exported and what
+        // Settings itself calls. Windows keeps one value for battery and one for plugged in; Set changes the
+        // one for the current power source.
+        [DllImport("powrprof.dll")]
+        public static extern uint PowerGetActualOverlayScheme(out Guid overlay);
+
+        [DllImport("powrprof.dll")]
+        public static extern uint PowerSetActiveOverlayScheme(Guid overlay);
+
+        public const int PowerRequestDisplayRequired = 0;
         public const int PowerRequestSystemRequired = 1;
         public const uint POWER_REQUEST_CONTEXT_VERSION = 0;
+
+        // SYSTEM_POWER_CAPABILITIES is 76 bytes; byte 20 is AoAc (Modern Standby).
+        [DllImport("powrprof.dll")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool GetPwrCapabilities([Out] byte[] capabilities);
         public const uint POWER_REQUEST_CONTEXT_SIMPLE_STRING = 0x1;
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -64,6 +79,7 @@ namespace LidAwake
 
         public const uint ES_CONTINUOUS = 0x80000000;
         public const uint ES_SYSTEM_REQUIRED = 0x00000001;
+        public const uint ES_DISPLAY_REQUIRED = 0x00000002;
 
         [DllImport("kernel32.dll")]
         public static extern uint SetThreadExecutionState(uint flags);
@@ -98,6 +114,73 @@ namespace LidAwake
         public static extern bool UnregisterPowerSettingNotification(IntPtr handle);
 
         // ---- IPC between the command line and the running tray instance --------------------
+
+        // ---- idle time, who keeps the screen on, session lock ------------------------------
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+
+        [DllImport("user32.dll")]
+        static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+
+        // Tick count of the last keyboard / mouse / touch input in this session.
+        public static uint LastInputTick()
+        {
+            var info = new LASTINPUTINFO();
+            info.cbSize = 8;
+            return GetLastInputInfo(ref info) ? info.dwTime : (uint)Environment.TickCount;
+        }
+
+        public static uint IdleSeconds() { return unchecked((uint)Environment.TickCount - LastInputTick()) / 1000; }
+
+        [DllImport("powrprof.dll")]
+        static extern uint CallNtPowerInformation(int level, IntPtr input, uint inputLength, out uint output, uint outputLength);
+
+        // The whole system's ES_* flags: every app's power requests added together.
+        public static uint SystemExecutionState()
+        {
+            uint state;
+            return CallNtPowerInformation(16 /* SystemExecutionState */, IntPtr.Zero, 0, out state, 4) == 0 ? state : 0;
+        }
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
+
+        [DllImport("kernel32.dll")]
+        static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll")]
+        static extern bool AttachThreadInput(uint attach, uint attachTo, bool on);
+
+        // Windows only lets the app the user is in bring another window to the front. Sharing its input
+        // queue for a moment is the usual way around that.
+        public static bool BringToFront(IntPtr hWnd)
+        {
+            IntPtr front = GetForegroundWindow();
+            if (front == hWnd) return true;
+            uint me = GetCurrentThreadId();
+            uint them = front != IntPtr.Zero ? GetWindowThreadProcessId(front, IntPtr.Zero) : 0;
+            bool attached = them != 0 && them != me && AttachThreadInput(me, them, true);
+            try { SetForegroundWindow(hWnd); }
+            finally { if (attached) AttachThreadInput(me, them, false); }
+            return GetForegroundWindow() == hWnd;
+        }
+
+        [DllImport("wtsapi32.dll", SetLastError = true)]
+        public static extern bool WTSRegisterSessionNotification(IntPtr hWnd, int flags);
+
+        [DllImport("wtsapi32.dll")]
+        public static extern bool WTSUnRegisterSessionNotification(IntPtr hWnd);
+
+        public const int WM_WTSSESSION_CHANGE = 0x02B1;
+        public const int WTS_SESSION_LOCK = 0x7;
+        public const int WTS_SESSION_UNLOCK = 0x8;
 
         public const int WM_COPYDATA = 0x004A;
         public const int WM_QUERYENDSESSION = 0x0011;
