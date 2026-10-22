@@ -31,7 +31,7 @@ namespace LidAwake
         readonly MessageWindow window;
         readonly NotifyIcon tray;
         readonly MenuHeader header;
-        readonly ToolStripMenuItem toggleItem, autostartItem, hotspotItem, timerItem, batteryItem, notifyItem, endItem;
+        readonly ToolStripMenuItem toggleItem, autostartItem, hotspotItem, timerItem, batteryItem, notifyItem, endItem, chargerItem;
         readonly Icon iconOn, iconOff;
         readonly System.Windows.Forms.Timer timer, recheck;
         readonly bool resident;   // keep the tray icon when off
@@ -45,6 +45,8 @@ namespace LidAwake
         DateTime lastHeat = DateTime.MinValue, lastTempLog = DateTime.MinValue, lastTip = DateTime.MinValue;
         string temps;             // last CPU / GPU reading, for the tooltip
         int timerChoice;   // 0 none, 1 one hour, 2 two hours, 3 until 8:00
+        bool charger;      // on because the charger is in ("Awake while charging")
+        bool chargerOff;   // turned off by hand while charging: stay off until the charger comes out
 
         public TrayApp(bool resident, bool turnOn, string holder, int pid)
         {
@@ -58,13 +60,14 @@ namespace LidAwake
             timerItem = TrayMenu.Row(Strings.MenuTimer, Glyph.None, null, delegate { CycleTimer(); });
             batteryItem = TrayMenu.Row(Strings.MenuBattery, Glyph.None, null, delegate { CycleBattery(); });
             endItem = TrayMenu.Row(Strings.MenuEnd, Glyph.None, null, delegate { SetEnd(!Prefs.ShutDownWhenDone); });
+            chargerItem = TrayMenu.Row(Strings.MenuCharger, Glyph.Check, null, delegate { SetCharger(!Prefs.AwakeOnCharger); });
             hotspotItem = TrayMenu.Row(Strings.MenuHotspot, Glyph.Check, null, delegate { ToggleHotspot(); });
             notifyItem = TrayMenu.Row(Strings.MenuNotify, Glyph.Check, null, delegate { SetNotify(!Prefs.NotifyDone); });
             autostartItem = TrayMenu.Row(Strings.MenuAutostart, Glyph.Check, null, delegate { ToggleAutostart(); });
             var quit = TrayMenu.Row(Strings.MenuQuit, Glyph.None, null, delegate { Quit("quit from the tray"); });
             ToolStripItem[] rows = resident
                 ? new ToolStripItem[] { toggleItem, timerItem, new ToolStripSeparator(),
-                    batteryItem, endItem, hotspotItem, notifyItem, autostartItem, new ToolStripSeparator(), quit }
+                    batteryItem, endItem, chargerItem, hotspotItem, notifyItem, autostartItem, new ToolStripSeparator(), quit }
                 : new ToolStripItem[] { toggleItem };
             ContextMenuStrip menu = TrayMenu.Build(App.FullIcon(), out header, rows);
             // the timer and battery rows change on each click, so keep the menu open for them
@@ -144,7 +147,8 @@ namespace LidAwake
             return true;
         }
 
-        // honorLid: the work is done, so if the lid is shut, hibernate (power off with everything saved).
+        // honorLid: the work is done, so if the lid is shut on battery, hibernate (power off with everything
+        // saved). On the charger the laptop is left on, so it stays reachable.
         void Deactivate(string why, bool honorLid)
         {
             if (!active) return;
@@ -156,6 +160,9 @@ namespace LidAwake
             onHotspot = false;
             lastHotspotTry = DateTime.MinValue;
             active = false;
+            charger = false;
+            bool plugged = PowerPlan.Charging();
+            if (plugged) chargerOff = true;   // turned off while charging: don't come straight back on
             bool lidClosed = keeper.LidClosed;
             guard.Stop("LidAwake turned off");
             try { keeper.Release(); }
@@ -163,7 +170,8 @@ namespace LidAwake
             Refresh();
 
             if (!resident) CloseUi();
-            if (honorLid && lidClosed)
+            if (honorLid && lidClosed && plugged) App.Log("Lid closed but charging: left on.");
+            else if (honorLid && lidClosed)
             {
                 if (Prefs.ShutDownWhenDone) Keeper.ShutDown("all work is done and the lid is closed");
                 else Keeper.Hibernate("all work is done and the lid is closed");
@@ -317,6 +325,16 @@ namespace LidAwake
             if (Enabled() != on) ToggleHotspot();
         }
 
+        void SetCharger(bool on)
+        {
+            try { Prefs.AwakeOnCharger = on; }
+            catch (Exception ex) { App.Log("Charger setting change failed: " + ex.Message); }
+            chargerOff = false;
+            if (!on) lastRelease = DateTime.UtcNow;   // still the usual minute before turning off
+            Refresh();
+            Evaluate();
+        }
+
         void Notify(string text)
         {
             App.Log("Notify: " + text);
@@ -405,6 +423,9 @@ namespace LidAwake
                 case "hotspot":
                     ui.Post(delegate { SetHotspot(id == "on"); }, null);
                     return "ok";
+                case "charging":
+                    ui.Post(delegate { SetCharger(id == "on"); }, null);
+                    return "ok";
                 default:
                     return "unknown command";
             }
@@ -422,8 +443,23 @@ namespace LidAwake
         {
             if (exiting) return;
             keeper.WatchPowerMode();
-            if (!active) return;
             DateTime now = DateTime.UtcNow;
+
+            // "Awake while charging": stay on while the charger is in, so Remote Control can still reach the
+            // laptop between prompts. When the charger comes out, the usual minute, then the usual end.
+            bool plugged = PowerPlan.Charging();
+            if (!plugged)
+            {
+                if (charger) { App.Log("Charger out."); lastRelease = now; }
+                chargerOff = false;
+            }
+            charger = resident && plugged && Prefs.AwakeOnCharger && !chargerOff;
+            if (charger && !active)
+            {
+                App.Log("Charging: staying on.");
+                if (!Activate()) { charger = false; chargerOff = true; }
+            }
+            if (!active) return;
             foreach (var pair in new List<KeyValuePair<string, Hold>>(holds))
             {
                 Hold h = pair.Value;
@@ -489,7 +525,8 @@ namespace LidAwake
             // Until it works, try once a minute; after that only if the internet drops for 10 s.
             if (!hotspotBusy)
             {
-                if (keeper.LidClosed && Enabled())
+                // not when only the charger keeps it on: nothing is working, so no mobile data
+                if (keeper.LidClosed && Enabled() && (manual || holds.Count > 0 || !charger))
                 {
                     bool due = now - lastHotspotTry > TimeSpan.FromMinutes(1);
                     if (!onHotspot) { if (due) StartHotspot(); }
@@ -508,7 +545,7 @@ namespace LidAwake
                 }
             }
 
-            if (!manual && holds.Count == 0 && now - lastRelease >= Linger)
+            if (!manual && !charger && holds.Count == 0 && now - lastRelease >= Linger)
                 Deactivate("all jobs done", true);
             else
                 Refresh();
@@ -519,11 +556,13 @@ namespace LidAwake
             string prefs = "\nSettings: hibernate at " + Prefs.HibernateAt + "% battery with the lid closed; heat limit "
                 + (Prefs.HeatLimit > 0 ? Prefs.HeatLimit + "°C" : "off") + "; when done with the lid closed: "
                 + (Prefs.ShutDownWhenDone ? "shut down" : "hibernate") + "; notify when done "
-                + (Prefs.NotifyDone ? "on" : "off") + "; phone hotspot " + (Enabled() ? "on" : "off");
+                + (Prefs.NotifyDone ? "on" : "off") + "; awake while charging " + (Prefs.AwakeOnCharger ? "on" : "off")
+                + "; phone hotspot " + (Enabled() ? "on" : "off");
             if (!active) return "running in the tray, off" + prefs;
             var parts = new List<string>();
             if (manual) parts.Add(until.HasValue ? "manual, timer until " + until.Value.ToLocalTime().ToString("HH:mm") : "manual");
             foreach (string k in holds.Keys) parts.Add(k);
+            if (charger) parts.Add("the charger");
             string who = parts.Count == 0 ? "nothing (turning off soon)" : string.Join(", ", parts.ToArray());
             return "on; held by: " + who + "; lid " + (keeper.LidClosed ? "closed" : "open")
                 + (keeper.Problem != null ? "; problem: " + keeper.Problem : "") + prefs;
@@ -540,6 +579,7 @@ namespace LidAwake
             else if (manual && until.HasValue) s = string.Format(Strings.StatusUntil, until.Value.ToLocalTime().ToString("HH:mm"));
             else if (manual) s = Strings.StatusManual;
             else if (holds.Count > 0) s = string.Format(Strings.StatusJobs, holds.Count);
+            else if (charger) s = Strings.StatusCharger;
             else s = Strings.StatusEnding;
             header.Set(active, s, active ? keeper.Problem : null);
 
@@ -560,6 +600,8 @@ namespace LidAwake
             ((RowInfo)endItem.Tag).Hint = Prefs.ShutDownWhenDone ? Strings.EndShutdown : Strings.EndHibernate;
             endItem.Invalidate();
             ((RowInfo)notifyItem.Tag).Checked = Prefs.NotifyDone;
+            ((RowInfo)chargerItem.Tag).Checked = Prefs.AwakeOnCharger;
+            chargerItem.Invalidate();
             notifyItem.Invalidate();
             toggleItem.Invalidate();
             autostartItem.Invalidate();

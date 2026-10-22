@@ -355,7 +355,10 @@ cup: grey = off, coral = on.
   the work. So at that moment LidAwake shows a black screen instead (safe for OLED); any key or mouse move
   brings the desktop back. Locking the PC (Win+L) still pauses the work after ~30 s: tell the user to close
   the lid instead of locking.
-- **When work ends with the lid closed,** or the battery reaches the threshold (default 10%), the laptop hibernates
+- **Awake while charging** (on by default): while the charger is in, LidAwake stays on even between prompts, so
+  the laptop stays reachable (Remote Control) with the lid open or closed. Turning it off by hand while charging
+  keeps it off until the charger comes out.
+- **When work ends with the lid closed on battery,** or the battery reaches the threshold (default 10%), the laptop hibernates
   (powers off, everything saved; the work resumes when it is opened), or shuts down if the user chose that.
   If the CPU or GPU stays at the heat limit (default 95°C) for a minute with the lid closed, it always hibernates.
 - **Temperatures:** hovering the tray cup shows the CPU and GPU temperature; `LidAwake.exe status` prints them.
@@ -369,11 +372,12 @@ Run these when the user asks for it or the task needs it. Each prints what it di
 | The user wants | Command |
 |---|---|
 | keep the laptop awake for a while / overnight | `LidAwake.exe for 2h` (or `90m`, `1.5h`), `LidAwake.exe until 8:00`; `for off` clears the timer |
-| turn it on now / off now | `LidAwake.exe on` / `LidAwake.exe off` (off with the lid closed hibernates the laptop) |
+| turn it on now / off now | `LidAwake.exe on` / `LidAwake.exe off` (off with the lid closed on battery hibernates the laptop) |
 | hibernate / shut down at another battery level | `LidAwake.exe battery 15` (3-50) |
 | another heat limit, or none | `LidAwake.exe heat 90` (70-100) / `LidAwake.exe heat off` |
 | shut down instead of hibernating when the work ends or the battery runs low, lid closed | `LidAwake.exe end shutdown` / `end hibernate` |
 | notifications on or off | `LidAwake.exe notify on` / `off` |
+| stay on (reachable) whenever the charger is in, or not | `LidAwake.exe charging on` / `off` |
 | the laptop on the phone's hotspot whenever LidAwake is on and the lid is closed (even from Wi-Fi) | `LidAwake.exe hotspot on` / `off` (needs Instant hotspot set up in Phone Link first) |
 | a detached process of yours must outlive your turn | `LidAwake.exe start <name>` before it, `LidAwake.exe stop <name>` when it is done |
 | see the state and all settings | `LidAwake.exe status` |

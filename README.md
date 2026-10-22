@@ -13,7 +13,7 @@ for as long as the job runs.
 
 - **Lives in the tray.** Click the coffee cup to turn it on (coral) or off (grey). While off it changes nothing
   and uses no CPU. Right-click for the menu: *Timer* (1 h, 2 h or until 8:00), *Hibernate at* (battery level),
-  *Phone hotspot*, *Notify when done* and *Start with Windows* (on by default).
+  *Awake while charging*, *Phone hotspot*, *Notify when done* and *Start with Windows* (on by default).
 - **No admin and no network.** One small exe (about 150 KB) that uses the .NET Framework built into Windows.
   No service and no scheduled task.
 
@@ -27,7 +27,8 @@ for as long as the job runs.
 | Lid closed while on battery | power mode *Best power efficiency* (Settings → System → Power) | your mode again, the next time the laptop is on battery |
 | Battery drops to your threshold (10% by default) with the lid closed | hibernates so nothing is lost; the job carries on when you open it (or shuts down if you picked that under *When done*) | |
 | CPU or GPU stays at the heat limit (95°C by default) for a minute with the lid closed, say in a bag | hibernates, same as above | |
-| Job ends while the lid is closed | | hibernates (everything saved, laptop off), or shuts down if you pick that under *When done* |
+| Job ends while the lid is closed, on battery | | hibernates (everything saved, laptop off), or shuts down if you pick that under *When done* |
+| Charger in (*Awake while charging*, on by default) | stays on between prompts too, so the laptop stays reachable, for example from Claude's Remote Control on your phone | when the charger comes out: a minute later, the usual end |
 
 Your original values are saved to `%LOCALAPPDATA%\LidAwake\restore.txt` **before** anything changes. If
 LidAwake is ever killed, the next start puts them back first. You can also run `LidAwake restore` at any time.
@@ -60,6 +61,9 @@ add or remove the Claude Code part later.
 - **Temperatures.** Hover the cup to see the CPU and GPU temperature. They come from the laptop maker's sensor
   on ASUS laptops, and otherwise from Windows (the ACPI thermal zone and the graphics driver, like Task Manager).
   No admin needed.
+- **Awake while charging** (on by default). While the charger is in, LidAwake stays on between prompts, with the
+  lid open or closed, so you can keep using Claude remotely. Turning it off from the cup while charging keeps it
+  off until you unplug. `LidAwake charging off` turns the option off.
 - **Notify when done** (on by default): a notification when Claude finishes a job that took longer than
   2 minutes, and when a timer ends. `LidAwake notify off` turns it off.
 
@@ -137,7 +141,7 @@ LidAwake until 8:00   on now, off at 8:00
 LidAwake battery 15   hibernate at 15% with the lid closed (3-50)
 LidAwake heat 90      hibernate if CPU/GPU stays this hot, lid closed (70-100, off)
 LidAwake end shutdown shut down instead of hibernating when done (end hibernate)
-LidAwake notify on|off    LidAwake hotspot on|off
+LidAwake notify on|off    LidAwake hotspot on|off    LidAwake charging on|off
 ```
 
 The log is at `%LOCALAPPDATA%\LidAwake\lidawake.log`.
@@ -169,7 +173,8 @@ try it without writing any power setting.
 
 LidAwake ține laptopul pornit cu capacul închis cât timp lucrează Claude (sau cât îl pornești tu). Ecranul se
 stinge (sau devine negru), iar pe baterie trece pe modul de putere cel mai economic. Când treaba e gata, inclusiv taskurile din fundal, pune setările
-înapoi exact cum erau. Dacă capacul e încă închis, laptopul intră în hibernate: se oprește cu tot salvat. Tot
+înapoi exact cum erau. La încărcător rămâne treaz și între prompturi, ca să-l poți folosi remote. Dacă
+capacul e încă închis și e pe baterie, laptopul intră în hibernate: se oprește cu tot salvat. Tot
 așa face dacă bateria ajunge la 10% cu capacul închis. Nu rulează în fundal, nu cere
 admin și nu folosește internetul. Pornești din Start → **LidAwake** și oprești din iconița cu cana de cafea din tray.
 

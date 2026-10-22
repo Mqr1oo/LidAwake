@@ -54,6 +54,13 @@ namespace LidAwake
             set { Set("ShutDownWhenDone", value ? 1 : 0); }
         }
 
+        // Stay on while the charger is in, so the laptop stays reachable (Remote Control) between prompts.
+        public static bool AwakeOnCharger
+        {
+            get { return Get("AwakeOnCharger", 1) == 1; }
+            set { Set("AwakeOnCharger", value ? 1 : 0); }
+        }
+
         // A balloon when Claude finishes a long job or a timer runs out.
         public static bool NotifyDone
         {

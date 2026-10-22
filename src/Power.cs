@@ -100,6 +100,13 @@ namespace LidAwake
 
         public static bool OnBattery() { return Status().ACLineStatus == 0; }
 
+        // A laptop on its charger (a PC without a battery doesn't count).
+        public static bool Charging()
+        {
+            var s = Status();
+            return s.ACLineStatus == 1 && s.BatteryFlag != 255 && (s.BatteryFlag & 128) == 0;
+        }
+
         // On Modern Standby laptops a screen that turns off by itself takes the whole PC into standby,
         // even with sleep set to "Never".
         public static bool ModernStandby()

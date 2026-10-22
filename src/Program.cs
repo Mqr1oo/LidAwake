@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Keeps a Windows laptop working with the lid closed while a job runs")]
 [assembly: AssemblyProduct("LidAwake")]
 [assembly: AssemblyCopyright("MIT License")]
-[assembly: AssemblyVersion("1.5.1.0")]
-[assembly: AssemblyFileVersion("1.5.1.0")]
+[assembly: AssemblyVersion("1.5.2.0")]
+[assembly: AssemblyFileVersion("1.5.2.0")]
 
 namespace LidAwake
 {
@@ -51,6 +51,7 @@ namespace LidAwake
                     case "notify": return OnOff("notify", arg1, "Notify when done:");
                     case "heat": return Heat(arg1);
                     case "end": return End(arg1);
+                    case "charging": return OnOff("charging", arg1, "Awake while charging:");
                     case "hotspot": return OnOff("hotspot", arg1, "Phone hotspot (while on with the lid closed):");
                     case "restore": return Restore();
                     case "install": return Installer.Install(false, arg1 == "--connect");
@@ -82,6 +83,8 @@ namespace LidAwake
                 var timer = TrayMenu.Row(Strings.MenuTimer, Glyph.None, on ? string.Format(Strings.TimerUntil, "08:00") : Strings.TimerOff, null);
                 var battery = TrayMenu.Row(Strings.MenuBattery, Glyph.None, "10%", null);
                 var end = TrayMenu.Row(Strings.MenuEnd, Glyph.None, Strings.EndHibernate, null);
+                var charger = TrayMenu.Row(Strings.MenuCharger, Glyph.Check, null, null);
+                ((RowInfo)charger.Tag).Checked = true;
                 var hotspot = TrayMenu.Row(Strings.MenuHotspot, Glyph.Check, null, null);
                 var notify = TrayMenu.Row(Strings.MenuNotify, Glyph.Check, null, null);
                 ((RowInfo)notify.Tag).Checked = true;
@@ -89,7 +92,7 @@ namespace LidAwake
                 ((RowInfo)auto.Tag).Checked = true;
                 var quit = TrayMenu.Row(Strings.MenuQuit, Glyph.None, null, null);
                 ContextMenuStrip menu = TrayMenu.Build(App.FullIcon(), out header, toggle, timer, new ToolStripSeparator(),
-                    battery, end, hotspot, notify, auto, new ToolStripSeparator(), quit);
+                    battery, end, charger, hotspot, notify, auto, new ToolStripSeparator(), quit);
                 header.Set(on, on ? string.Format(Strings.StatusUntil, "08:00") : Strings.StatusOff, null);
                 menu.Show(new Point(-4000, -4000));
                 Application.DoEvents();
@@ -604,6 +607,7 @@ namespace LidAwake
         public static readonly string StatusManual = Ro ? "Pornit de tine" : "Turned on by you";
         public static readonly string StatusUntil = Ro ? "Pornit până la {0}" : "On until {0}";
         public static readonly string StatusJobs = Ro ? "Lucrează pentru {0} job(uri) Claude" : "Working for {0} Claude job(s)";
+        public static readonly string StatusCharger = Ro ? "Treaz cât e la încărcat" : "Awake while charging";
         public static readonly string StatusEnding = Ro ? "Gata - se oprește în câteva secunde" : "Done - turning off in a moment";
         public static readonly string StatusOff = Ro ? "Click pe cană ca să-l pornești" : "Click the cup to turn it on";
         public static readonly string BalloonOn = Ro ? "Poți închide capacul: ecranul se stinge, treaba continuă." : "You can close the lid: the screen turns off, the work keeps going.";
@@ -618,6 +622,7 @@ namespace LidAwake
         public static readonly string TimerUntil = Ro ? "până la {0}" : "until {0}";
         public static readonly string MenuBattery = Ro ? "Hibernează la" : "Hibernate at";
         public static readonly string MenuBatteryShutDown = Ro ? "Oprește la" : "Shut down at";
+        public static readonly string MenuCharger = Ro ? "Treaz la încărcat" : "Awake while charging";
         public static readonly string MenuNotify = Ro ? "Notificare la final" : "Notify when done";
         public static readonly string ClaudeDone = Ro ? "Claude a terminat (a lucrat {0} min)." : "Claude is done (worked {0} min).";
         public static readonly string TimerDone = Ro ? "Timer-ul s-a terminat. LidAwake se oprește dacă nu mai lucrează nimic." : "The timer is over. LidAwake turns off unless something is still working.";
@@ -648,6 +653,7 @@ namespace LidAwake
   LidAwake heat 90    hibernate if the CPU or GPU stays this hot for a minute, lid closed (70-100 or off, default 95)
   LidAwake end hibernate|shutdown   what to do when the work ends or the battery runs low, lid closed
   LidAwake notify on|off   balloon when Claude finishes a long job or a timer ends
-  LidAwake hotspot on|off  connect to the phone's hotspot while on with the lid closed";
+  LidAwake hotspot on|off  connect to the phone's hotspot while on with the lid closed
+  LidAwake charging on|off stay on while the charger is in (reachable between prompts)";
     }
 }
