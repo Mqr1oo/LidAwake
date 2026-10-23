@@ -46,7 +46,7 @@ namespace LidAwake
         string temps;             // last CPU / GPU reading, for the tooltip
         int timerChoice;   // 0 none, 1 one hour, 2 two hours, 3 until 8:00
         bool charger;      // on because the charger is in ("Awake while charging")
-        bool chargerOff;   // turned off by hand while charging: stay off until the charger comes out
+        bool chargerOff;   // turned off by hand while charging: stay off until the next prompt or the charger comes out
 
         public TrayApp(bool resident, bool turnOn, string holder, int pid)
         {
@@ -117,8 +117,10 @@ namespace LidAwake
 
         void Toggle()
         {
-            if (active) Deactivate("turned off from the tray", false);
-            else TurnOnManually();
+            if (!active) { TurnOnManually(); return; }
+            Deactivate("turned off from the tray", false);
+            if (chargerOff && Prefs.AwakeOnCharger)
+                tray.ShowBalloonTip(6000, "LidAwake", Strings.ChargerPaused, ToolTipIcon.None);
         }
 
         void TurnOnManually()
@@ -385,6 +387,7 @@ namespace LidAwake
             {
                 case "start":
                     Add(id, pid);
+                    chargerOff = false;   // a new prompt: "Awake while charging" again after it
                     ui.Post(delegate { Activate(); }, null);
                     break;
                 case "stop":

@@ -178,6 +178,23 @@ namespace LidAwake
         [DllImport("wtsapi32.dll")]
         public static extern bool WTSUnRegisterSessionNotification(IntPtr hWnd);
 
+        [DllImport("wtsapi32.dll", SetLastError = true)]
+        static extern bool WTSQuerySessionInformationW(IntPtr server, int sessionId, int infoClass, out IntPtr buffer, out int bytes);
+
+        [DllImport("wtsapi32.dll")]
+        static extern void WTSFreeMemory(IntPtr memory);
+
+        // Locked right now? WTSSessionInfoEx: Level 1, then (8-byte aligned) SessionId, SessionState,
+        // SessionFlags at offset 16, where 0 = locked.
+        public static bool SessionIsLocked()
+        {
+            IntPtr buf;
+            int bytes;
+            if (!WTSQuerySessionInformationW(IntPtr.Zero, -1, 25, out buf, out bytes)) return false;
+            try { return bytes >= 20 && Marshal.ReadInt32(buf, 0) == 1 && Marshal.ReadInt32(buf, 16) == 0; }
+            finally { WTSFreeMemory(buf); }
+        }
+
         public const int WM_WTSSESSION_CHANGE = 0x02B1;
         public const int WTS_SESSION_LOCK = 0x7;
         public const int WTS_SESSION_UNLOCK = 0x8;

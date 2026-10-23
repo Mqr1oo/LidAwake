@@ -21,6 +21,7 @@ namespace LidAwake
     {
         static readonly Guid SubButtons = new Guid("4f971e89-eebd-4455-a8de-9e59040e7347");
         static readonly Guid LidActionId = new Guid("5ca83367-6e45-459f-a27b-476b1d01c936");
+        static readonly Guid SleepButtonId = new Guid("96996bc0-ad50-47ec-923b-6f41874dd9eb");  // the keyboard's sleep key
         static readonly Guid SubSleep = new Guid("238c9fa8-0aad-41ed-83f4-97be242c8f20");
         static readonly Guid StandbyIdle = new Guid("29f6c1db-86da-48c5-9fdb-f2b67b1f44da");    // "Put the computer to sleep after"
         static readonly Guid UnattendSleep = new Guid("7bc4a2f9-d8fc-4469-b07b-33eb785aaca0");  // sleep timeout at the lock screen
@@ -42,6 +43,8 @@ namespace LidAwake
         public static readonly PlanSetting[] KeptAwake =
         {
             LidAc, LidDc,
+            new PlanSetting("sleepkey.ac", SubButtons, SleepButtonId, true),
+            new PlanSetting("sleepkey.dc", SubButtons, SleepButtonId, false),
             new PlanSetting("standby.ac", SubSleep, StandbyIdle, true),
             new PlanSetting("standby.dc", SubSleep, StandbyIdle, false),
             new PlanSetting("unattend.ac", SubSleep, UnattendSleep, true),

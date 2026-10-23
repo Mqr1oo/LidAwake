@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Keeps a Windows laptop working with the lid closed while a job runs")]
 [assembly: AssemblyProduct("LidAwake")]
 [assembly: AssemblyCopyright("MIT License")]
-[assembly: AssemblyVersion("1.5.2.0")]
-[assembly: AssemblyFileVersion("1.5.2.0")]
+[assembly: AssemblyVersion("1.5.3.0")]
+[assembly: AssemblyFileVersion("1.5.3.0")]
 
 namespace LidAwake
 {
@@ -622,6 +622,9 @@ namespace LidAwake
         public static readonly string TimerUntil = Ro ? "până la {0}" : "until {0}";
         public static readonly string MenuBattery = Ro ? "Hibernează la" : "Hibernate at";
         public static readonly string MenuBatteryShutDown = Ro ? "Oprește la" : "Shut down at";
+        public static readonly string ChargerPaused = Ro
+            ? "Oprit. La încărcat pornește iar singur la următorul prompt (sau debifează „Treaz la încărcat”)."
+            : "Off. While charging it comes back on by itself with the next prompt (or untick \"Awake while charging\").";
         public static readonly string MenuCharger = Ro ? "Treaz la încărcat" : "Awake while charging";
         public static readonly string MenuNotify = Ro ? "Notificare la final" : "Notify when done";
         public static readonly string ClaudeDone = Ro ? "Claude a terminat (a lucrat {0} min)." : "Claude is done (worked {0} min).";

@@ -22,6 +22,7 @@ for as long as the job runs.
 | | While on | After |
 |---|---|---|
 | Lid close action (plugged in and on battery) | *Do nothing*: the screen turns off and the PC keeps working | your setting again |
+| Sleep key on the keyboard (*Sleep button action*) | *Do nothing*, so a sleep key pressed out of habit before closing the lid doesn't stop the work | your setting again |
 | *Put the computer to sleep after…* and the lock-screen sleep timeout | *Never* (on Modern Standby laptops a keep-awake request alone stops working ~5 min after this timer runs out) | your setting again |
 | Screen | turns off as usual. On Modern Standby laptops a screen that turns off puts the whole laptop into standby and the job stops, so there it turns **black** at that moment instead (on OLED, black pixels are off, so nothing burns in). Any key or mouse move brings it back. If a video keeps the screen on, nothing changes | as before |
 | Lid closed while on battery | power mode *Best power efficiency* (Settings → System → Power) | your mode again, the next time the laptop is on battery |
@@ -63,7 +64,7 @@ add or remove the Claude Code part later.
   No admin needed.
 - **Awake while charging** (on by default). While the charger is in, LidAwake stays on between prompts, with the
   lid open or closed, so you can keep using Claude remotely. Turning it off from the cup while charging keeps it
-  off until you unplug. `LidAwake charging off` turns the option off.
+  off until the next prompt or until you unplug. `LidAwake charging off` turns the option off.
 - **Notify when done** (on by default): a notification when Claude finishes a job that took longer than
   2 minutes, and when a timer ends. `LidAwake notify off` turns it off.
 

@@ -349,7 +349,7 @@ cup: grey = off, coral = on.
 
 - **Hooks** in `~/.claude/settings.json` (`LidAwake.exe hook`) turn it on when a prompt is sent. It stays on
   while background tasks run and turns off 60 s after everything is done. Normal work needs nothing from you.
-- **While it is on:** the lid action is ""Do nothing"" and idle sleep is ""Never"". With the lid closed on
+- **While it is on:** the lid action and the keyboard's sleep key are ""Do nothing"" and idle sleep is ""Never"". With the lid closed on
   battery, the power mode is ""Best power efficiency"". The user's settings come back afterwards, even after a crash.
 - **Screen:** on Modern Standby laptops a screen that turns off by itself puts the laptop into standby and stops
   the work. So at that moment LidAwake shows a black screen instead (safe for OLED); any key or mouse move
@@ -357,7 +357,7 @@ cup: grey = off, coral = on.
   the lid instead of locking.
 - **Awake while charging** (on by default): while the charger is in, LidAwake stays on even between prompts, so
   the laptop stays reachable (Remote Control) with the lid open or closed. Turning it off by hand while charging
-  keeps it off until the charger comes out.
+  keeps it off until the next prompt or until the charger comes out.
 - **When work ends with the lid closed on battery,** or the battery reaches the threshold (default 10%), the laptop hibernates
   (powers off, everything saved; the work resumes when it is opened), or shuts down if the user chose that.
   If the CPU or GPU stays at the heat limit (default 95°C) for a minute with the lid closed, it always hibernates.

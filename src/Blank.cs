@@ -25,6 +25,9 @@ namespace LidAwake
         public ScreenGuard(Keeper keeper)
         {
             this.keeper = keeper;
+            // started while locked (say, installed from a remote prompt): no lock notice will come, so ask
+            locked = Native.SessionIsLocked();
+            if (locked) App.Log("Session locked.");
             watch.Interval = 250;
             watch.Tick += delegate
             {
